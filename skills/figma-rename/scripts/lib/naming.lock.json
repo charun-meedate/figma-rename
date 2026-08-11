@@ -1,0 +1,13 @@
+{
+  "$comment": "Hashes of every function in naming.mjs that figma-token-export also ships. The codemod must spell identifiers exactly the way that generator writes them; if these files drift, the rename rewrites code to names nothing generates. Regenerate deliberately with: node selftest.mjs --relock",
+  "functions": {
+    "segments": "76d4185c7050296d",
+    "toCamel": "15eeeb99b7146326",
+    "toKebab": "bcbdefed4b97b67f",
+    "toPascal": "bddfea7a4396de01",
+    "toSnake": "1e9cc168f556a12b",
+    "toDot": "cc6634645c0f6fd8",
+    "namespaceOf": "9262d7d8dbd0e34c",
+    "assertUniqueIdentifiers": "b4f57de36406c2d2"
+  }
+}

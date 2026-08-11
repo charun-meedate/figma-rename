@@ -1,0 +1,6 @@
+{
+  "name": "figma-rename-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Scripts for the figma-rename skill. No dependencies; Node 18+."
+}
