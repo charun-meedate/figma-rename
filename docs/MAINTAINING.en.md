@@ -154,9 +154,17 @@ because "clean consumers but a stale `tokens.css`" means someone skipped step 2.
 
 ## Changing the skill
 
+Two things have to pass, and they check different things:
+
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 60 cases, all must pass
+node skills/figma-rename/scripts/selftest.mjs     # 64 cases — the scripts are right
 ```
+
+and the **evals** in `skills/figma-rename/evals/`, which check that the *agent
+walks the process correctly* — does it ask about the convention first, does it
+capture values or only names, does it stop for `needsReview`, does it
+regenerate before the codemod. Passing the selftest says nothing about those.
+How to run and score them: [evals/README.md](../skills/figma-rename/evals/README.md)
 
 Things to be careful about:
 

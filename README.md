@@ -54,6 +54,7 @@ skills/figma-rename/         ตัว skill
 ├── SKILL.md                 ไฟล์ที่ Claude Code โหลด
 ├── figma-rename.md          คู่มือฉบับเต็ม
 ├── references/              รายละเอียดแยกหัวข้อ โหลดเมื่อจำเป็น
+├── evals/                   ชุดทดสอบพฤติกรรม 4 อัน
 └── scripts/                 โค้ดจริง ไม่มี dependency (Node 18+)
 ```
 
@@ -88,10 +89,13 @@ Plan ของทีมเป็น **Organization** ไม่ใช่ Enterpri
 
 ## แก้ skill
 
+รัน `selftest.mjs` (สคริปต์ยังถูก) **และ** eval ใน `skills/figma-rename/evals/`
+(agent ยังเดินกระบวนการถูก) — คนละเรื่องกัน ทั้งสองอย่างต้องผ่าน
+
 ```bash
 node skills/figma-rename/scripts/selftest.mjs
 ```
 
-ต้องผ่านทั้งหมดก่อน commit เสมอ ถ้าแตะ `lib/naming.mjs` ต้อง re-lock ด้วย
+ถ้าแตะ `lib/naming.mjs` ต้อง re-lock ด้วย
 `node skills/figma-rename/scripts/selftest.mjs --relock` **แล้วไปแก้ figma-token-export
 ให้ตรงกันด้วย** ไม่งั้น codemod กับ generator จะสะกดคนละแบบ

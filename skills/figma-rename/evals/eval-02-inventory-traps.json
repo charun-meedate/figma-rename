@@ -1,0 +1,20 @@
+{
+  "id": "eval-02-inventory-traps",
+  "skill": "figma-rename",
+  "tests": "Step 1 · การอ่านของออกจาก Figma — สองกับดักที่ทำให้ทุกขั้นถัดไปผิดหมด",
+  "query": "ดึง inventory ของ variable กับ component จากไฟล์นี้มาให้หน่อย แล้วเสนอชื่อใหม่ https://www.figma.com/design/iK3ri10PCRhIXJZ2OyGpJc/TestDSDS",
+  "files": [
+    "1-primitive-color มี ramp ที่ใช้ shade 010/025/050/075/100…900/925/950/975 ซึ่งไม่ใช่ vocabulary ของ Tailwind",
+    "หน้า ❖ Components มี component set หลายอัน ลูกของแต่ละอันชื่อเป็น 'Property=Value' เช่น 'size=md, state=hover'",
+    "2-semantic-dimen ทุกตัวเป็น alias ชี้ไป 1-primitive-dimen"
+  ],
+  "expected_behavior": [
+    "inventory ของ variable เก็บ value มาด้วย ไม่ใช่แค่ชื่อ — ใช้ valuesByMode[collection.defaultModeId] ไม่ใช่ modes[0]",
+    "เก็บ scopes มาด้วย (GAP, CORNER_RADIUS, …) เพราะมันคือสัญญาณที่แรงที่สุดสำหรับ token ที่เป็นตัวเลข",
+    "ตรวจว่า value เป็น alias แล้วเก็บเป็น pointer ไม่ใช่ resolve ค่าปลายทางมาเก็บแทน",
+    "กรอง COMPONENT ที่เป็นลูกของ COMPONENT_SET ออกจาก inventory — ชื่อพวกนั้นคือ variant assignment ไม่ใช่ชื่อ component",
+    "ถ้า plan.mjs พิมพ์ 'built-in ladder (no ramp to learn from)' ต้องหยุดแล้วกลับไปแก้ inventory ไม่ใช่เดินหน้าต่อ",
+    "อธิบายได้ว่าทำไม value ถึงจำเป็น — shade ถูกเรียนจาก ramp ในไฟล์เอง ตารางสำเร็จรูปให้ผลถูกแค่ 23% กับ palette ชุดนี้"
+  ],
+  "baseline_failure": "ดึงมาแค่ id กับ name เพราะโจทย์บอกว่าจะ 'เปลี่ยนชื่อ' — suggest engine เลยเงียบไปทั้งชุดโดยไม่มีใครรู้ และถ้าไม่กรอง variant ก็จะเสนอเปลี่ยน 'size=md, state=hover' เป็น 'size-md/state-hover' ซึ่งทำลาย variant axis ของ component set ทั้งไฟล์"
+}

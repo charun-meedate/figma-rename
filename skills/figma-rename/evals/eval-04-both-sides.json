@@ -1,0 +1,20 @@
+{
+  "id": "eval-04-both-sides",
+  "skill": "figma-rename",
+  "tests": "Step 4–6 · ลง Figma แล้วตามด้วยโค้ด — ลำดับที่สลับไม่ได้",
+  "query": "batch variable-primitive ผ่าน check แล้ว apply ต่อให้จบเลย",
+  "files": [
+    "โปรเจกต์ใช้ figma-token-export อยู่ ไฟล์ generated อยู่ที่ src/tokens/ และระบุไว้ใน code.generated",
+    "มีโค้ดที่เขียนเองอ้าง token เหล่านี้อยู่ 87 ไฟล์",
+    "batch นี้ย้าย palette/** ทั้งหมดไปเป็น primitive/** ซึ่งเปลี่ยน segment แรก"
+  ],
+  "expected_behavior": [
+    "ใช้สคริปต์ที่ emit-figma.mjs สร้าง ไม่เขียน use_figma script เอง — id 40 คู่ที่พิมพ์ผิดหนึ่งตัวคือเปลี่ยนชื่อผิดตัวโดยไม่มี error",
+    "รัน apply-code.mjs แบบ dry run ก่อนเสมอ แล้วอ่านรายการ 'matched nothing' ออกมา ไม่ใช่ --write ทันที",
+    "regenerate ไฟล์ token ก่อน codemod ไม่ใช่หลัง — และไม่ commit ระหว่างที่ tree ยัง compile ไม่ผ่าน",
+    "รัน check.mjs --after แล้ว build/test ให้ผ่านทั้งคู่ก่อน commit",
+    "รายงานว่า namespace ที่แตกเป็นหลายปลายทางจะไม่ถูก rename class ให้ และปล่อยให้ compiler ชี้เอง แทนที่จะไปแก้เดา ๆ",
+    "commit เฉพาะ batch นี้ พร้อมแปะผลลัพธ์ที่ use_figma คืนมา ไม่รวบหลาย batch เป็น commit เดียว"
+  ],
+  "baseline_failure": "codemod ก่อนแล้วค่อย regenerate หรือลืม regenerate ไปเลย — consumer ชี้ไปชื่อใหม่ แต่ tokens.css ยังเป็นชื่อเก่า build พังแบบหาต้นตอยาก หรือไม่ก็ commit ตอนที่ยัง compile ไม่ผ่านแล้วบอกว่าเสร็จแล้ว"
+}

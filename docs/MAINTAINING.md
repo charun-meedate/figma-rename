@@ -146,9 +146,16 @@ node "$S/check.mjs" --after   # ต้องไม่เหลือชื่อ
 
 ## แก้ตัว skill
 
+มีสองอย่างที่ต้องผ่าน และเป็นคนละเรื่องกัน:
+
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 60 เคส ต้องผ่านหมด
+node skills/figma-rename/scripts/selftest.mjs     # 64 เคส — สคริปต์ยังถูก
 ```
+
+กับ **eval** ใน `skills/figma-rename/evals/` ซึ่งทดสอบว่า *agent เดินกระบวนการถูก* —
+ถามเรื่อง convention ก่อนไหม ดึงค่ามาด้วยหรือเอาแค่ชื่อ หยุดให้คนอ่าน `needsReview` ไหม
+regenerate ก่อน codemod ไหม ผ่าน selftest ไม่ได้แปลว่าผ่าน eval
+วิธีรันกับวิธีให้คะแนนอยู่ใน [evals/README.md](../skills/figma-rename/evals/README.md)
 
 จุดที่ต้องระวังเป็นพิเศษ:
 

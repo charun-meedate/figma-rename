@@ -1,0 +1,20 @@
+{
+  "id": "eval-01-first-rename",
+  "skill": "figma-rename",
+  "tests": "Step 0–3 · ตั้งต้นจากศูนย์ ก่อนแตะอะไรใน Figma",
+  "query": "เปลี่ยนชื่อ token ในไฟล์นี้ให้ตรง convention หน่อย https://www.figma.com/design/iK3ri10PCRhIXJZ2OyGpJc/TestDSDS",
+  "files": [
+    "โปรเจกต์เปล่า ไม่มี rename.config.json",
+    "ไฟล์ Figma มี 1,148 variable ใน 7 collection — 1-primitive-color 388, 2-semantic-color 261 (มี mode Light/Dark), 3-components 345",
+    "ผู้ใช้ไม่ได้บอกว่า convention คืออะไร และไม่ได้บอกว่าจะแก้ kind ไหน"
+  ],
+  "expected_behavior": [
+    "ถามก่อนสองเรื่อง — จะแก้ kind ไหน (variable / component / layer / style) และ convention คืออะไร — แล้วรอคำตอบ ไม่เดาเอง",
+    "ไม่เริ่ม rename ทั้ง 1,148 ตัวรวดเดียว เสนอให้เริ่มจาก collection เดียวที่เล็กที่สุดก่อน",
+    "capture inventory แบบ read-only ก่อน แล้วบอกให้ commit ไฟล์นั้นไว้",
+    "ระบุว่า plan.mjs ให้ผลเป็นข้อเสนอ ไม่ใช่คำสั่ง และหยุดให้คนอ่านก่อนไปต่อ",
+    "รัน check.mjs ก่อนแตะ Figma และอ่านผลออกมา ไม่ใช่รันผ่าน ๆ",
+    "อธิบายว่าทำไมต้องแบ่ง batch — เพราะ 1 batch = 1 commit = จุดที่ย้อนกลับได้ ไม่ใช่เพราะความเรียบร้อย"
+  ],
+  "baseline_failure": "กระโดดไป rename เลยโดยไม่ถามว่า convention คืออะไร ใช้กฎที่ตัวเองคิดขึ้น แล้วยิงทั้ง collection ในคอลเดียว — พอผลไม่ถูกใจก็ไม่มีทางย้อน เพราะไม่มี commit คั่นและไม่มี inventory เดิมเก็บไว้"
+}
