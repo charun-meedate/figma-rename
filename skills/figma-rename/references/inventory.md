@@ -339,8 +339,13 @@ if (!root) throw new Error("That node is not in this file — check the link");
 const page = root.type === "PAGE" ? root : (() => { let p = root; while (p.parent && p.type !== "PAGE") p = p.parent; return p; })();
 await figma.setCurrentPageAsync(page);
 
-const nodes = ("findAllWithCriteria" in root ? root : page)
-  .findAllWithCriteria({ types: ["COMPONENT", "COMPONENT_SET"] })
+const WANTED = ["COMPONENT", "COMPONENT_SET"];
+// findAllWithCriteria walks DESCENDANTS — the node you linked to is not in its
+// own results. Linking straight to the component you want to rename is the most
+// natural thing to do, and without this line it returns an empty inventory and
+// no explanation. (Verified: scoping to a COMPONENT_SET returned 0 entries.)
+const found = ("findAllWithCriteria" in root ? root : page).findAllWithCriteria({ types: WANTED });
+const nodes = (WANTED.includes(root.type) ? [root, ...found] : found)
   .filter((n) => !(n.type === "COMPONENT" && n.parent?.type === "COMPONENT_SET"));
 
 return {
@@ -350,6 +355,11 @@ return {
   entries: nodes.map((n) => ({ /* …as above… */ })),
 };
 ```
+
+A node link scopes **components**, not the page they sit on: linking to a set
+gives you that set, linking to a section gives you what is inside it. If the
+capture comes back empty, the link points at something with no component in or
+at it — a frame full of instances, say — not at a broken script.
 
 **Variables cannot be scoped this way.** They are file-level, not canvas nodes —
 `getLocalVariablesAsync` has no subtree. Narrow those by collection when
