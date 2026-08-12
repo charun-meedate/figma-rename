@@ -28,7 +28,7 @@
 
 ## ต่างจาก `selftest.mjs` ยังไง
 
-`selftest.mjs` ทดสอบว่า **สคริปต์** ทำงานถูก — 161 เคสบน boundary guard, การแทนที่
+`selftest.mjs` ทดสอบว่า **สคริปต์** ทำงานถูก — 162 เคสบน boundary guard, การแทนที่
 พร้อมกันตอนมี chain, การ refuse ของ check, calibration, staging กับ reverse
 รันได้ในเครื่องเปล่า ไม่ต้องมี Figma
 
@@ -80,6 +80,10 @@ eval ทดสอบว่า **agent เดินกระบวนการถ
   ไฟล์ generated ด้วย และมีเคสใน selftest คุมไว้
 - **กับดัก dumps เก่า** (eval-04) มาจากการ audit รอบสอง — Step 5 เดิมไม่เคยบอกว่าต้อง
   re-capture dumps หลัง rename ใน Figma ทำให้ `sync.mjs` regenerate ชื่อเก่ากลับมาเงียบ ๆ
+- **plan ตายทั้งรอบเพราะ component ตัวเดียว** (eval-02 รอบสอง) — `result.to` เป็น null
+  เมื่อชื่อมาจาก classifier ไม่ใช่จากกฎ ซึ่งเป็นเส้นทางปกติของ component พอเอาไปสร้าง
+  code suggestion เลยพังทั้ง run: 1,222 entry, component ที่ชื่อดีอยู่แล้วตัวเดียว, ไม่ได้แผนเลย
+  — บั๊กแบบนี้ selftest ไม่เจอเพราะ fixture ไม่มีเคส "ชื่อถูกอยู่แล้วแต่ classifier เห็นต่าง"
 - **ทางลัด MCP** (eval-02) มาจากการรัน eval จริงครั้งแรก — agent ไม่ได้ใช้สคริปต์ capture
   ของ skill เลย ไปหยิบ `get_variable_defs` กับ `list_file_components_for_code_connect`
   ซึ่งพร้อมใช้กว่ามาก แล้วได้ inventory ที่ไม่มี id / ไม่มี scopes / ไม่มี collection /

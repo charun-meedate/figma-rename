@@ -2034,6 +2034,46 @@ test('a rename that DOES change a code spelling is never called regrouping-only'
   p.cleanup();
 });
 
+test('a component named only by the classifier does not crash the plan', () => {
+  // `result.to` is null when the convention had no opinion and the name came
+  // from the classifier — the normal path for a component. Building the code
+  // suggestion off it crashed the whole run: on a real file, 1,222 entries
+  // planned and one already-well-named component took the entire plan with it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-shape-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['componentSet'],
+      convention: { components: { segmentCase: 'pascal' } },
+      code: { roots: ['.'], include: ['**/*.css'], exclude: [], generated: [] },
+    }),
+  );
+  // "Avatar" is already pascal, so the convention leaves it alone (result.to is
+  // null) while the classifier reads the shape and proposes something else.
+  const signature = sig({
+    width: 20, height: 20, cornerRadius: 9999, hasFill: true, hasSolidFill: true,
+    childCount: 1, totalDescendants: 1, hasIcon: true, smallInstances: 1,
+  });
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({
+      entries: [{ kind: 'componentSet', id: '1:1', name: 'Avatar', scope: 'Avatar', pageId: '0:1', signature }],
+    }),
+  );
+  const result = run('plan.mjs', [], dir);
+  assert.equal(result.ok, true, result.out);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  const row = map.batches[0].renames[0];
+  assert.equal(row.source, 'shape');
+  // the code suggestion is built from the row's target, not from the convention
+  // "Icon Button" -> "IconButton": the code symbol follows the row's target.
+  assert.equal(row.codeSuggestion[0].to, row.to.replace(/[^A-Za-z0-9]/g, ''));
+  assert.equal(row.codeSuggestion[0].from, 'Avatar');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('token-side rules written for a layer pass are called out, not ignored', () => {
   // layer/component/componentSet read convention.components.*, so a rule in
   // convention.rules never fires for them. The run still succeeds and the names

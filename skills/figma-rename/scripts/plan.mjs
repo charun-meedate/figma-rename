@@ -318,8 +318,12 @@ async function main() {
     // A component's code symbol is a guess, never a derivation — it is offered
     // as a suggestion the reviewer promotes to `code`, and apply-code ignores
     // it until they do. See references/code-sync.md.
+    // `to` is the row's agreed target. `result.to` is null whenever the name came
+    // from the classifier rather than a rule — the normal path for a component —
+    // and reading it here killed the whole run on the first such component:
+    // 1,222 entries planned, one unnameable component, no plan at all.
     if (entry.kind === 'component' || entry.kind === 'componentSet') {
-      rename.codeSuggestion = [{ from: toPascal(entry.name), to: toPascal(result.to) }];
+      rename.codeSuggestion = [{ from: toPascal(entry.name), to: toPascal(to) }];
     }
     groups.get(key).renames.push(rename);
   }
