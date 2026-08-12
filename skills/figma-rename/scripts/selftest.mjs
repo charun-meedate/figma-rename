@@ -1333,6 +1333,118 @@ test('the artefact exclusion cannot be overridden away', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// ------------------------------------------------------- config and errors
+
+section('config and errors');
+
+/** Writes a config and returns what plan.mjs says about it. */
+function configSays(config, argv = ['--print-config']) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-cfg-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'rename.config.json'), JSON.stringify(config));
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({ entries: [{ kind: 'variable', id: 'V1', name: 'x/a', scope: 'S', resolvedType: 'COLOR', value: { r: 0, g: 0, b: 1, a: 1 } }] }),
+  );
+  const result = run('plan.mjs', argv, dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+  return result;
+}
+
+test('a string where transform wants an array is refused, not silently ignored', () => {
+  // `for (const p of "palette")` iterates characters and does nothing at all.
+  const result = configSays({ figma: { fileKey: 'K' }, convention: { transform: { stripPrefix: 'palette' } } });
+  assert.equal(result.ok, false);
+  assert.match(result.out, /stripPrefix must be an ARRAY/);
+});
+
+test('an object where transform.replace wants an array names the key', () => {
+  const result = configSays({ figma: { fileKey: 'K' }, convention: { transform: { replace: { find: 'a', with: 'b' } } } });
+  assert.equal(result.ok, false);
+  assert.match(result.out, /replace must be an ARRAY/);
+});
+
+test('a misplaced key inside transform points at where it belongs', () => {
+  const result = configSays({ figma: { fileKey: 'K' }, convention: { transform: { segmentCase: 'kebab' } } });
+  assert.equal(result.ok, false);
+  assert.match(result.out, /convention\.segmentCase/);
+});
+
+test('an unknown setting is refused with the list of real ones', () => {
+  const result = configSays({ figma: { fileKey: 'K' }, conventions: { segmentCase: 'kebab' } });
+  assert.equal(result.ok, false);
+  assert.match(result.out, /`conventions` is not a setting/);
+  assert.match(result.out, /convention/);
+});
+
+test('a setting in the wrong block is refused', () => {
+  // sizeNaming belongs inside `convention`; at the top level it did nothing.
+  const result = configSays({ figma: { fileKey: 'K' }, sizeNaming: 'numeric' });
+  assert.equal(result.ok, false);
+  assert.match(result.out, /`sizeNaming` is not a setting/);
+});
+
+test('sizeNaming and colorGroup are validated', () => {
+  assert.match(configSays({ figma: { fileKey: 'K' }, convention: { sizeNaming: 'Numeric' } }).out, /must be "semantic" or "numeric"/);
+  assert.match(configSays({ figma: { fileKey: 'K' }, convention: { colorGroup: 'my colors' } }).out, /not usable as a name segment/);
+});
+
+test('extends must be a string, and says what a string looks like', () => {
+  const result = configSays({ extends: ['aurora'], figma: { fileKey: 'K' } });
+  assert.equal(result.ok, false);
+  assert.match(result.out, /`extends` must be a string/);
+  assert.match(result.out, /aurora/);
+});
+
+test('a broken rule names the file it lives in, not just an index', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-src-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'rename.config.json'), JSON.stringify({ extends: './team.json', figma: { fileKey: 'K' } }));
+  fs.writeFileSync(
+    path.join(dir, 'team.json'),
+    JSON.stringify({ convention: { segmentCase: 'kebab', rules: [{ match: 'a/*', to: 'b/$1' }, { match: 'c/x', to: 'd/$2' }] } }),
+  );
+  fs.writeFileSync(path.join(dir, 'rename/inventory.json'), JSON.stringify({ entries: [{ kind: 'variable', id: 'V1', name: 'a/x', scope: 'S' }] }));
+  const result = run('plan.mjs', [], dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /team\.json convention\.rules\[1\]/, result.out);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a mistyped flag is refused before anything is written', () => {
+  // --dryrun used to parse into an ignored key, and plan WROTE THE MAP while
+  // the user believed they were previewing.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-flag-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'rename.config.json'), JSON.stringify({ figma: { fileKey: 'K' }, kinds: ['variable'], convention: { segmentCase: 'kebab' } }));
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({ entries: [{ kind: 'variable', id: 'V1', name: 'Color 1', scope: 'S', resolvedType: 'COLOR', value: { r: 0.2, g: 0.5, b: 0.9, a: 1 } }] }),
+  );
+  const result = run('plan.mjs', ['--dryrun'], dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /Unknown flag --dryrun/);
+  assert.match(result.out, /Did you mean --dry-run/);
+  assert.equal(fs.existsSync(path.join(dir, 'rename/rename-map.json')), false, 'nothing may be written on a bad flag');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a flag that needs a value fails instead of reaching Node', () => {
+  const result = configSays({ figma: { fileKey: 'K' } }, ['--config']);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /--config needs a value/);
+});
+
+test('--min-confidence and --kind are validated with a suggestion', () => {
+  const conf = configSays({ figma: { fileKey: 'K' }, kinds: ['variable'] }, ['--min-confidence', 'hgh']);
+  assert.equal(conf.ok, false);
+  assert.match(conf.out, /is not a level/);
+  const kind = configSays({ figma: { fileKey: 'K' } }, ['--kind', 'component-set']);
+  assert.equal(kind.ok, false);
+  assert.match(kind.out, /is not a kind/);
+  assert.match(kind.out, /componentSet/);
+});
+
 // ------------------------------------------------------------ plan integrity
 
 section('plan integrity');

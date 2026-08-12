@@ -21,7 +21,7 @@
 //   3. It returns the old and new name of everything it touched, which is the
 //      record that makes `--reverse` trustworthy.
 
-import { loadConfig, parseArgs } from './lib/config.mjs';
+import { COMMON_FLAGS, loadConfig, parseArgs } from './lib/config.mjs';
 import { batchById, effectiveRenames, findChains, loadMap, pendingRenames, statusOf } from './lib/map.mjs';
 import { toCamel, toKebab } from './lib/naming.mjs';
 
@@ -38,7 +38,10 @@ const GETTERS = {
 const NODE_KINDS = new Set(['component', 'componentSet', 'layer']);
 
 async function main() {
-  const args = parseArgs();
+  const args = parseArgs(process.argv.slice(2), {
+    flags: [...COMMON_FLAGS, ...['batch','reverse','with-code-syntax','force']],
+    wantsValue: ['config','batch'],
+  });
   const config = await loadConfig(args.config);
   const map = await loadMap(config.renameMapPath);
 

@@ -179,19 +179,21 @@ function fillTemplate(template, match) {
 
 export function compileConvention(convention = {}) {
   const rules = (convention.rules ?? []).map((rule, i) => {
+    // `$src` is stamped on by the extends resolver. Without it, an index into
+    // the merged array names no file, and the reader has no idea which of three
+    // possible sources to open.
+    const where = rule?.$src ? `${rule.$src} convention.rules[${i}]` : `convention.rules[${i}]`;
     if (!rule || typeof rule.match !== 'string') {
-      throw new Error(`convention.rules[${i}] needs a \`match\` glob string.`);
+      throw new Error(`${where} needs a \`match\` glob string.`);
     }
     if (rule.to !== undefined && typeof rule.to !== 'string') {
-      throw new Error(`convention.rules[${i}].to must be a string template (or omitted to only normalize).`);
+      throw new Error(`${where}.to must be a string template (or omitted to only normalize).`);
     }
     const { re, captures } = compileGlob(rule.match);
     const wanted = [...(rule.to ?? '').matchAll(/\$(\d)/g)].map((m) => Number(m[1]));
     for (const n of wanted) {
       if (n < 1 || n > captures) {
-        throw new Error(
-          `convention.rules[${i}] uses $${n} but "${rule.match}" has ${captures} wildcard(s).`,
-        );
+        throw new Error(`${where} uses $${n} but "${rule.match}" has ${captures} wildcard(s).`);
       }
     }
     return { ...rule, re, index: i };

@@ -32,12 +32,15 @@ import {
   spellingsFor,
   TOKEN_KINDS,
 } from './lib/codemod.mjs';
-import { loadConfig, parseArgs } from './lib/config.mjs';
+import { COMMON_FLAGS, loadConfig, parseArgs } from './lib/config.mjs';
 import { loadInventory } from './lib/inventory.mjs';
 import { batchById, isFrozen, loadMap, pendingRenames, selectRenames, statusOf } from './lib/map.mjs';
 
 async function main() {
-  const args = parseArgs();
+  const args = parseArgs(process.argv.slice(2), {
+    flags: [...COMMON_FLAGS, ...['batch','kind','write','include-generated','no-namespace-classes']],
+    wantsValue: ['config','batch','kind'],
+  });
   const config = await loadConfig(args.config);
   const map = await loadMap(config.renameMapPath);
   const inventory = await loadInventory(config.inventoryPath);

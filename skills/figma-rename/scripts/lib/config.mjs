@@ -95,6 +95,14 @@ async function resolveExtends(value, rootDir, seen = []) {
     throw new Error(`Could not parse ${target}: ${err.message}`);
   }
 
+  // Tag the rules with where they came from. After a merge, "rules[3]" is an
+  // index into a combined array that may belong to a preset, a team file, or the
+  // project — and the error used to name none of them.
+  const label = looksLikePath ? path.relative(rootDir, target) : `preset "${value}"`;
+  for (const rule of parsed.convention?.rules ?? []) {
+    if (rule && typeof rule === 'object' && !rule.$src) rule.$src = label;
+  }
+
   if (parsed.extends) {
     const base = await resolveExtends(parsed.extends, path.dirname(target), [...seen, target]);
     return mergeConfig(base, parsed);
@@ -136,6 +144,12 @@ export async function loadConfig(explicitPath) {
   }
 
   let extendsFrom = null;
+  if (parsed.extends !== undefined && typeof parsed.extends !== 'string') {
+    throw new Error(
+      `Invalid ${configPath}: \`extends\` must be a string — a preset name ("aurora") or a path ` +
+        `("../design-system/naming.json"). Got ${JSON.stringify(parsed.extends)}.`,
+    );
+  }
   if (parsed.extends) {
     extendsFrom = parsed.extends;
     parsed = mergeConfig(await resolveExtends(parsed.extends, rootDir), parsed);
@@ -173,6 +187,82 @@ export async function loadConfig(explicitPath) {
       errors.push('convention.structure.categories must be an array of first-segment names.');
     }
   }
+
+  if (convention.transform !== undefined) {
+    const t = convention.transform;
+    if (typeof t !== 'object' || Array.isArray(t)) {
+      errors.push('convention.transform must be an object of { separator, stripPrefix, stripSuffix, addPrefix, replace }.');
+    } else {
+      for (const key of ['stripPrefix', 'stripSuffix']) {
+        if (t[key] !== undefined && !Array.isArray(t[key])) {
+          // A string here iterates character by character and silently does
+          // nothing — the worst failure shape there is.
+          errors.push(`convention.transform.${key} must be an ARRAY of prefixes, e.g. ["palette"] (got ${JSON.stringify(t[key])}).`);
+        }
+      }
+      if (t.addPrefix !== undefined && typeof t.addPrefix !== 'string') {
+        errors.push(`convention.transform.addPrefix must be a string, e.g. "primitive" (got ${JSON.stringify(t.addPrefix)}).`);
+      }
+      if (t.separator !== undefined) {
+        if (typeof t.separator !== 'object' || Array.isArray(t.separator) || !t.separator.from) {
+          errors.push('convention.transform.separator must be { "from": "-", "to": "/" }.');
+        }
+      }
+      if (t.replace !== undefined) {
+        if (!Array.isArray(t.replace)) {
+          errors.push('convention.transform.replace must be an ARRAY of { find, with } pairs.');
+        } else {
+          t.replace.forEach((pair, i) => {
+            if (!pair || typeof pair !== 'object' || !pair.find || pair.with === undefined) {
+              errors.push(`convention.transform.replace[${i}] needs both \`find\` and \`with\`.`);
+            }
+          });
+        }
+      }
+      const unknownTransform = Object.keys(t).filter(
+        (k) => !k.startsWith('$') && !['separator', 'stripPrefix', 'stripSuffix', 'addPrefix', 'replace'].includes(k),
+      );
+      if (unknownTransform.length) {
+        errors.push(
+          `convention.transform has no key(s) ${unknownTransform.join(', ')}. ` +
+            'Valid: separator, stripPrefix, stripSuffix, addPrefix, replace. ' +
+            '(Case per segment is convention.segmentCase; the number scale is convention.sizeNaming.)',
+        );
+      }
+    }
+  }
+  if (convention.sizeNaming !== undefined && !['semantic', 'numeric'].includes(convention.sizeNaming)) {
+    errors.push(`convention.sizeNaming "${convention.sizeNaming}" must be "semantic" or "numeric".`);
+  }
+  if (convention.colorGroup !== undefined) {
+    if (typeof convention.colorGroup !== 'string' || !/^[A-Za-z0-9/_-]+$/.test(convention.colorGroup)) {
+      errors.push(
+        `convention.colorGroup "${convention.colorGroup}" is not usable as a name segment — ` +
+          'letters, digits, "/", "-" and "_" only.',
+      );
+    }
+  }
+
+  // Unknown keys. A typo'd `conventions`, or `sizeNaming` placed at the top
+  // level instead of inside `convention`, used to be silently ignored: the user
+  // saw a plan that behaved as if they had never written the setting.
+  const KNOWN_TOP = ['extends', 'figma', 'inventoryPath', 'renameMapPath', 'kinds', 'convention', 'code'];
+  const KNOWN_CONVENTION = [
+    'separator', 'segmentCase', 'aliases', 'rules', 'conforming', 'ignore', 'structure',
+    'transform', 'sizeNaming', 'colorGroup',
+  ];
+  const KNOWN_CODE = [
+    'roots', 'include', 'exclude', 'generated', 'spellings', 'cssPrefix', 'flutterPrefix', 'tokensConfig',
+  ];
+  const unknown = (obj, known, where) =>
+    Object.keys(obj ?? {})
+      .filter((k) => !k.startsWith('$') && !known.includes(k))
+      .map((k) => `${where}${k}\` is not a setting. Valid: ${known.join(', ')}.`);
+  errors.push(
+    ...unknown(config, [...KNOWN_TOP, 'extendsFrom'], '`'),
+    ...unknown(config.convention, KNOWN_CONVENTION, '`convention.'),
+    ...unknown(config.code, KNOWN_CODE, '`code.'),
+  );
 
   if (config.kinds !== undefined) {
     if (!Array.isArray(config.kinds)) {
@@ -249,25 +339,56 @@ function withArtifactExcludes(config, rootDir) {
   return [...config.code.exclude, ...forced.filter((p) => !already.has(p))];
 }
 
-/** Minimal flag parser: `--key value` and `--flag`. */
-export function parseArgs(argv = process.argv.slice(2)) {
+/**
+ * Flag parser with an allow-list.
+ *
+ * The list is not pedantry. With no list, `--dryrun` parsed into an ignored key
+ * and plan WROTE THE MAP while the user believed they were previewing;
+ * `--no-suggests` left value-based renames in the plan while they believed they
+ * had turned them off. A silently-accepted typo is a tool doing the opposite of
+ * what it was told.
+ *
+ * `wantsValue` names the flags that take one, so `--config` with nothing after
+ * it fails here instead of reaching `path.resolve(true)`.
+ */
+export function parseArgs(argv = process.argv.slice(2), { flags = null, wantsValue = [] } = {}) {
   const args = { _: [] };
+  const needsValue = new Set(wantsValue);
   for (let i = 0; i < argv.length; i++) {
     const item = argv[i];
-    if (item.startsWith('--')) {
-      const key = item.slice(2);
-      const next = argv[i + 1];
-      if (next === undefined || next.startsWith('--')) {
-        args[key] = true;
-      } else {
-        args[key] = next;
-        i++;
-      }
-    } else {
+    if (!item.startsWith('--')) {
       args._.push(item);
+      continue;
+    }
+    const key = item.slice(2);
+    if (flags && !flags.includes(key)) {
+      const near = flags.filter((f) => f.startsWith(key.slice(0, 3)) || key.startsWith(f.slice(0, 3)));
+      throw new Error(
+        `Unknown flag --${key}.` +
+          (near.length ? ` Did you mean --${near.join(' or --')}?` : '') +
+          `\nValid flags: ${flags.map((f) => `--${f}`).join(', ')}`,
+      );
+    }
+    const next = argv[i + 1];
+    if (needsValue.has(key)) {
+      if (next === undefined || next.startsWith('--')) {
+        throw new Error(`--${key} needs a value.`);
+      }
+      args[key] = next;
+      i++;
+      continue;
+    }
+    if (next === undefined || next.startsWith('--')) {
+      args[key] = true;
+    } else {
+      args[key] = next;
+      i++;
     }
   }
   return args;
 }
+
+/** Flags every CLI accepts. */
+export const COMMON_FLAGS = ['config', 'help'];
 
 export { VALID_KINDS, VALID_SPELLINGS };

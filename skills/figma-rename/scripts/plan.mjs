@@ -21,7 +21,7 @@
 // decide mechanically come back under `needsReview` with `to: null` rather
 // than a confident guess.
 
-import { loadConfig, parseArgs } from './lib/config.mjs';
+import { COMMON_FLAGS, VALID_KINDS, loadConfig, parseArgs } from './lib/config.mjs';
 import { compileConvention, compileGlob, matchesAny, proposeName } from './lib/convention.mjs';
 import { loadInventory } from './lib/inventory.mjs';
 import { MAP_VERSION, conventionHash, loadMapIfPresent, mergePlans, writeMap } from './lib/map.mjs';
@@ -40,7 +40,10 @@ function slug(text) {
 }
 
 async function main() {
-  const args = parseArgs();
+  const args = parseArgs(process.argv.slice(2), {
+    flags: [...COMMON_FLAGS, ...['kind','only','max-batch','min-confidence','no-suggest','fresh','dry-run','print-config']],
+    wantsValue: ['config','kind','only','max-batch','min-confidence'],
+  });
   const config = await loadConfig(args.config);
   // The merged view. Anyone who has to ask "is my override actually winning?"
   // has already lost an afternoon to a shared config; this answers it in one
@@ -55,11 +58,26 @@ async function main() {
   const inventory = await loadInventory(config.inventoryPath);
   const convention = compileConvention(config.convention);
 
+  if (args.kind && !VALID_KINDS.has(args.kind)) {
+    const near = [...VALID_KINDS].filter((k) => k.toLowerCase().includes(String(args.kind).toLowerCase().slice(0, 4)));
+    throw new Error(
+      `--kind "${args.kind}" is not a kind.` +
+        (near.length ? ` Did you mean ${near.join(' or ')}?` : '') +
+        `\nValid: ${[...VALID_KINDS].join(', ')}`,
+    );
+  }
   const kinds = args.kind ? [args.kind] : config.kinds;
   const only = args.only ? [compileGlob(args.only)] : null;
   const maxBatch = Number(args['max-batch'] ?? DEFAULT_MAX_BATCH);
   if (!Number.isFinite(maxBatch) || maxBatch < 1) {
     throw new Error(`--max-batch must be a positive number (got ${args['max-batch']}).`);
+  }
+  if (args['min-confidence'] && CONFIDENCE_RANK[args['min-confidence']] === undefined) {
+    // Silently degrading to "low" handed back exactly the guesses the user was
+    // trying to exclude, with nothing in the output to say so.
+    throw new Error(
+      `--min-confidence "${args['min-confidence']}" is not a level. Valid: ${Object.keys(CONFIDENCE_RANK).join(', ')}.`,
+    );
   }
 
   const scoped = inventory.entries.filter(
@@ -76,7 +94,7 @@ async function main() {
   // something the team decided, a suggestion is something a formula noticed.
   // Off by default unless the inventory actually carries values.
   const wantSuggest = args['no-suggest'] ? false : scoped.some((e) => e.value !== undefined);
-  const minConfidence = CONFIDENCE_RANK[args['min-confidence'] ?? 'low'] ?? 0;
+  const minConfidence = CONFIDENCE_RANK[args['min-confidence'] ?? 'low'];
   let suggested = new Map();
   let suggestReview = [];
   let calibration = null;

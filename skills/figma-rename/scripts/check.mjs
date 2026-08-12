@@ -27,7 +27,7 @@ import {
   spellingsFor,
   TOKEN_KINDS,
 } from './lib/codemod.mjs';
-import { loadConfig, parseArgs } from './lib/config.mjs';
+import { COMMON_FLAGS, loadConfig, parseArgs } from './lib/config.mjs';
 import { bucketOf, loadInventory } from './lib/inventory.mjs';
 import {
   conventionHash,
@@ -54,7 +54,10 @@ function checkNameLegality(to, errors, at) {
 }
 
 async function main() {
-  const args = parseArgs();
+  const args = parseArgs(process.argv.slice(2), {
+    flags: [...COMMON_FLAGS, ...['batch','kind','code','after','allow-convention-drift']],
+    wantsValue: ['config','batch','kind'],
+  });
   const config = await loadConfig(args.config);
   const map = await loadMap(config.renameMapPath);
   const inventory = await loadInventory(config.inventoryPath);
@@ -255,7 +258,7 @@ async function reportCodeHits(config, renames, warnings, allTokenNames) {
   for (const file of files) {
     const text = await fs.readFile(file, 'utf8');
     const generated = isGenerated(file);
-    if (!generated) consumerFiles++;
+    let hitThisFile = 0;
     for (const [re, sink] of [
       [forward, hits],
       [reverse, occupied],
@@ -263,15 +266,23 @@ async function reportCodeHits(config, renames, warnings, allTokenNames) {
       if (!re) continue;
       for (const match of text.matchAll(re.re)) {
         if (sink === hits) {
-          if (generated) generatedHits++;
-          else consumerHits++;
-          if (generated) continue; // reported, but not the codemod's work
+          if (generated) {
+            generatedHits++;
+            continue; // reported, but not the codemod's work
+          }
+          consumerHits++;
+          hitThisFile++;
         }
         sink.set(match[0], (sink.get(match[0]) ?? 0) + 1);
       }
     }
+    if (hitThisFile) consumerFiles++;
   }
 
+  // Files WITH A HIT, not files scanned. Counting scanned files reported
+  // thousands of files "the codemod will rewrite" on a normal repo, while
+  // apply-code reported the honest number for the same map — two commands
+  // disagreeing by orders of magnitude about one question.
   console.log(
     `[check] ${consumerFiles} file(s) the codemod will rewrite, ${consumerHits} occurrence(s)`,
   );

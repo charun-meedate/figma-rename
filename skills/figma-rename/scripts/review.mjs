@@ -30,7 +30,7 @@
 // everything one rule produced, `--min-confidence` decides a tier, `--ids`
 // handles the leftovers.
 
-import { loadConfig, parseArgs } from './lib/config.mjs';
+import { COMMON_FLAGS, loadConfig, parseArgs } from './lib/config.mjs';
 import {
   BATCH_STATUSES,
   batchById,
@@ -314,7 +314,10 @@ function cmdMark(map, args) {
 // ---------------------------------------------------------------------- entry
 
 async function main() {
-  const args = parseArgs();
+  const args = parseArgs(process.argv.slice(2), {
+    flags: [...COMMON_FLAGS, ...['batch','all','ids','rule','match','min-confidence','note','to','json','pending','figma-applied','applied']],
+    wantsValue: ['config','batch','ids','rule','match','min-confidence','note','to'],
+  });
   const command = args._[0];
   if (!command || command === 'help') {
     console.log(USAGE);
