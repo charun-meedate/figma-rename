@@ -225,6 +225,19 @@ export function compileConvention(convention = {}) {
     if (rule.to !== undefined && typeof rule.to !== 'string') {
       throw new Error(`${where}.to must be a string template (or omitted to only normalize).`);
     }
+    // `match` is a glob. A regex written here compiles into a literal that can
+    // never match any name, and nothing downstream notices: the plan just comes
+    // back with fewer renames than expected and no explanation. Catch the three
+    // shapes that are unmistakably regex — anchors and an explicit `(.*)`.
+    const regexish = /^\^|\$$|\(\.\*\)/.exec(rule.match);
+    if (regexish) {
+      const asGlob = rule.match.replace(/^\^/, '').replace(/\$$/, '').replace(/\(\.\*\)/g, '**');
+      throw new Error(
+        `${where}.match is a glob, not a regex — "${rule.match}" would only ever match a name ` +
+          `containing "${regexish[0]}" literally. Write it as "${asGlob}" (\`*\` stops at "/", ` +
+          '`**` does not), and keep using $1, $2 in `to` for the wildcards.',
+      );
+    }
     const { re, captures } = compileGlob(rule.match);
     const wanted = [...(rule.to ?? '').matchAll(/\$(\d)/g)].map((m) => Number(m[1]));
     for (const n of wanted) {
@@ -273,9 +286,6 @@ export function proposeName(name, compiled) {
   if (matchesAny(name, compiled.ignore)) {
     return { to: null, status: 'ignored', rule: null, why: 'matched convention.ignore' };
   }
-  if (matchesAny(name, compiled.conforming)) {
-    return { to: null, status: 'conforming', rule: null, why: null };
-  }
 
   let candidate = name;
   let rule = null;
@@ -285,6 +295,16 @@ export function proposeName(name, compiled) {
     if (r.to !== undefined) candidate = fillTemplate(r.to, match);
     rule = `${r.match} -> ${r.to ?? '(normalize only)'}`;
     break;
+  }
+
+  // Checked AFTER the rules, and deliberately: `conforming` means "no rule needs
+  // to reach this name", not "never touch this name". A rule that names it wins,
+  // so a project can move `palette/**` to `primitive/**` by adding one rule
+  // instead of restating the whole conforming list it inherited. `ignore` above
+  // is the real veto. `transform` runs below and does NOT override conforming —
+  // it is a blanket tidy-up, not a statement about this name.
+  if (!rule && matchesAny(name, compiled.conforming)) {
+    return { to: null, status: 'conforming', rule: null, why: null };
   }
 
   const transformed = applyTransform(candidate, compiled.transform);

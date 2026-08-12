@@ -788,22 +788,70 @@ test('the shipped presets are valid on their own', () => {
 });
 
 test('a preset never marks as conforming something its own rules want to fix', () => {
-  // conforming is checked BEFORE rules, so `color/**` in conforming would
-  // shadow a `color/bg-*` rule and nothing would ever be renamed.
+  // Rules now win over conforming, so this can no longer silently disable a
+  // rule — but a preset that claims a name in both places is still telling two
+  // stories about it, and the reader has to guess which one is intended.
   const presetsDir = path.resolve(HERE, '../presets');
   for (const file of fs.readdirSync(presetsDir).filter((f) => f.endsWith('.json'))) {
     const parsed = JSON.parse(fs.readFileSync(path.join(presetsDir, file), 'utf8'));
-    const compiled = compileConvention(parsed.convention);
+    const compiled = compileConvention({ ...parsed.convention, rules: [] });
     for (const rule of parsed.convention.rules ?? []) {
       const sample = rule.match.replace(/\*\*/g, 'x/y').replace(/\*/g, 'x');
-      const result = proposeName(sample, compiled);
       assert.notEqual(
-        result.status,
+        proposeName(sample, compiled).status,
         'conforming',
-        `${file}: "${rule.match}" can never fire — conforming already claims "${sample}"`,
+        `${file}: "${rule.match}" overlaps conforming, which already claims "${sample}"`,
       );
     }
   }
+});
+
+test('a regex written where a glob belongs is refused, with the glob spelled out', () => {
+  // It compiles to a literal that matches nothing, so without this the only
+  // symptom is a plan that quietly renames less than you asked for.
+  assert.throws(
+    () => compileConvention({ rules: [{ match: '^palette/(.*)$', to: 'primitive/$1' }] }),
+    /glob, not a regex[\s\S]*"palette\/\*\*"/,
+  );
+  assert.throws(
+    () => compileConvention({ rules: [{ match: 'color/text-*$' }] }),
+    /glob, not a regex/,
+  );
+  // A plain glob with wildcards is still fine.
+  assert.doesNotThrow(() => compileConvention({ rules: [{ match: 'palette/**', to: 'x/$1' }] }));
+});
+
+test('an explicit rule beats an inherited conforming glob', () => {
+  // The whole point of extends is that a project overrides one thing without
+  // restating the standard. aurora marks palette/** conforming; a project that
+  // moves palette to primitive must be able to say so in one rule.
+  const compiled = compileConvention({
+    conforming: ['palette/**'],
+    rules: [{ name: 'palette-to-primitive', match: 'palette/**', to: 'primitive/$1' }],
+  });
+  const result = proposeName('palette/blue/500', compiled);
+  assert.equal(result.status, 'renamed', 'conforming must not shadow a rule that names this');
+  assert.equal(result.to, 'primitive/blue/500');
+});
+
+test('conforming still wins when only transform would have touched the name', () => {
+  // transform is a blanket tidy-up, not a statement about this name — letting it
+  // override conforming would make every conforming glob meaningless the moment
+  // a separator was set.
+  const compiled = compileConvention({
+    conforming: ['palette/**'],
+    transform: { separator: '-' },
+    rules: [],
+  });
+  assert.equal(proposeName('palette/blue/500', compiled).status, 'conforming');
+});
+
+test('ignore still vetoes a rule that matches', () => {
+  const compiled = compileConvention({
+    ignore: ['palette/**'],
+    rules: [{ name: 'x', match: 'palette/**', to: 'primitive/$1' }],
+  });
+  assert.equal(proposeName('palette/blue/500', compiled).status, 'ignored');
 });
 
 // ---------------------------------------------------------------- transform
