@@ -246,9 +246,20 @@ export function buildReplacer(pairs) {
   for (const pair of pairs) {
     const existing = byFrom.get(pair.from);
     if (existing && existing.to !== pair.to) {
+      // Both sides being namespaceClass is the common case, and it has a
+      // specific cause: the Flutter generator special-cases a `colors`
+      // namespace, so `AppColors` serves as both its colour class and its scale
+      // class. Renaming that namespace splits one old name into two new ones.
+      // Without naming the way out, the documented preflight cannot run at all.
+      const bothClasses = existing.spelling === 'namespaceClass' && pair.spelling === 'namespaceClass';
       throw new Error(
         `Ambiguous rewrite: "${pair.from}" would become both "${existing.to}" (${existing.spelling}) ` +
-          `and "${pair.to}" (${pair.spelling}).`,
+          `and "${pair.to}" (${pair.spelling}).` +
+          (bothClasses
+            ? '\nThe colliding names are generated Dart classes, not your own code. If this project ' +
+              'has no generated Dart, re-run with --no-namespace-classes; otherwise pick a namespace ' +
+              'the generator does not special-case.'
+            : ''),
       );
     }
     if (!existing) byFrom.set(pair.from, pair);

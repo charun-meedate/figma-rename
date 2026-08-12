@@ -64,6 +64,7 @@ node "$S/review.mjs" skip <id>                         # leave it; survives a re
 # 4. refuse before touching anything
 node "$S/check.mjs"           # against the inventory
 node "$S/check.mjs" --code    # + scan the repo for how many places will change
+node "$S/check.mjs" --code --no-namespace-classes   # skip generated class names
 
 # 5. build the Figma script
 node "$S/emit-figma.mjs" --batch <id>
@@ -174,7 +175,7 @@ because "clean consumers but a stale `tokens.css`" means someone skipped step 2.
 Two things have to pass, and they check different things:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 157 cases — the scripts are right
+node skills/figma-rename/scripts/selftest.mjs     # 159 cases — the scripts are right
 ```
 
 and the **evals** in `skills/figma-rename/evals/`, which check that the *agent

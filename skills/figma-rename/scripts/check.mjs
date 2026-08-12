@@ -56,7 +56,7 @@ function checkNameLegality(to, errors, at) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
-    flags: [...COMMON_FLAGS, ...['batch','kind','code','after','allow-convention-drift']],
+    flags: [...COMMON_FLAGS, ...['batch','kind','code','after','allow-convention-drift','no-namespace-classes']],
     wantsValue: ['config','batch','kind'],
   });
   const config = await loadConfig(args.config);
@@ -79,7 +79,7 @@ async function main() {
       console.log('[check] nothing has been applied yet — nothing to verify.');
       return;
     }
-    return checkAfter(config, applied, allTokenNames);
+    return checkAfter(config, applied, allTokenNames, args['no-namespace-classes']);
   }
 
   const errors = [];
@@ -236,14 +236,20 @@ async function main() {
     );
   }
 
-  if (args.code) await reportCodeHits(config, renames, warnings, allTokenNames);
+  if (args.code) await reportCodeHits(config, renames, warnings, allTokenNames, args['no-namespace-classes']);
 
   report(errors, warnings, `${renames.length} rename(s) checked`);
 }
 
 /** Counts, per rename, how many places in the codebase would actually change. */
-async function reportCodeHits(config, renames, warnings, allTokenNames) {
-  const classes = namespaceClassPairs(renames, { ...config.code, allTokenNames });
+async function reportCodeHits(config, renames, warnings, allTokenNames, noClasses = false) {
+  // apply-code has always had this escape hatch; check did not, so a namespace
+  // the Flutter generator special-cases (`colors` -> AppColors) made the
+  // documented preflight impossible to run at all — the one command whose whole
+  // job is to be runnable before anything is touched.
+  const classes = noClasses
+    ? { pairs: [], advisories: ['namespace-class rewrites skipped (--no-namespace-classes)'] }
+    : namespaceClassPairs(renames, { ...config.code, allTokenNames });
   for (const advisory of classes.advisories) warnings.push(advisory);
   const pairs = [...renames.flatMap((r) => spellingsFor(r, config.code)), ...classes.pairs];
   const forward = buildReplacer(pairs);
@@ -318,8 +324,10 @@ async function reportCodeHits(config, renames, warnings, allTokenNames) {
 }
 
 /** After applying: nothing may still be spelled the old way. */
-async function checkAfter(config, renames, allTokenNames) {
-  const classes = namespaceClassPairs(renames, { ...config.code, allTokenNames });
+async function checkAfter(config, renames, allTokenNames, noClasses = false) {
+  const classes = noClasses
+    ? { pairs: [], advisories: [] }
+    : namespaceClassPairs(renames, { ...config.code, allTokenNames });
   const pairs = [...renames.flatMap((r) => spellingsFor(r, config.code)), ...classes.pairs];
   const replacer = buildReplacer(pairs);
   const files = await listFiles({

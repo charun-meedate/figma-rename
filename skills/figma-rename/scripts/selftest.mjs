@@ -1979,6 +1979,61 @@ function lifecycleProject() {
   return { dir, readMap, writeInventory, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
+test('check --code can run for a namespace the generator special-cases', () => {
+  // Renaming colors/** is one of the most ordinary things anyone will do, and
+  // it made `check --code` — the command whose entire job is to run BEFORE
+  // anything is touched — impossible to run: AppColors maps to two new class
+  // names at once. apply-code always had the escape hatch; check did not.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-amb-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['variable'],
+      convention: { segmentCase: 'kebab', rules: [{ match: 'colors/**', to: 'palette/$1' }] },
+      code: { roots: ['.'], include: ['**/*.css'], exclude: [], generated: [], flutterPrefix: 'App' },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({
+      entries: [{ kind: 'variable', id: 'V1', name: 'colors/red/500', scope: 'S', resolvedType: 'COLOR', value: { r: 1, g: 0, b: 0, a: 1 } }],
+    }),
+  );
+  fs.writeFileSync(path.join(dir, 'src/a.css'), '.a{color:var(--colors-red-500)}\n');
+  run('plan.mjs', [], dir);
+
+  const blocked = run('check.mjs', ['--code'], dir);
+  assert.equal(blocked.ok, false, 'the ambiguity is real and must still be refused by default');
+  assert.match(blocked.out, /Ambiguous rewrite/);
+  // and the refusal has to name the way out, or it is a dead end
+  assert.match(blocked.out, /--no-namespace-classes/);
+
+  const allowed = run('check.mjs', ['--code', '--no-namespace-classes'], dir);
+  assert.equal(allowed.ok, true, allowed.out);
+  assert.match(allowed.out, /namespace-class rewrites skipped/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a rename that DOES change a code spelling is never called regrouping-only', () => {
+  // The first version of the regrouping report compared a pair's `from` (a code
+  // spelling, `--colors-red-500`) against the rename's `from` (a Figma name,
+  // `colors/red/500`). Two different alphabets, so nothing ever matched and
+  // every rename was reported as changing no code — while the rewrite happened
+  // anyway. A reviewer reading "no code changes" would have approved blind.
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  const result = run('apply-code.mjs', ['--batch', 'variable-s1'], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /would rewrite [1-9]/);
+  assert.doesNotMatch(result.out, /regrouping only/);
+  p.cleanup();
+});
+
 test('a rename that only regroups segments says so instead of reporting zero', () => {
   // Found on TestDSDS: font-family/heading -> font/family/heading. Every code
   // spelling flattens "/" and "-" identically, so the identifier does not move

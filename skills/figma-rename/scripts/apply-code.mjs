@@ -87,7 +87,12 @@ async function main() {
   }
 
   const allTokenNames = inventory.entries.filter((e) => TOKEN_KINDS.has(e.kind)).map((e) => e.name);
-  const tokenPairs = renames.flatMap((r) => spellingsFor(r, config.code));
+  // Keep each pair tied to the rename it came from. A pair's own `from` is a
+  // CODE spelling (`--colors-red-500`), never the Figma name, so anything that
+  // tries to match the two up later compares two different alphabets and
+  // silently concludes nothing changed.
+  const pairsByRename = renames.map((r) => ({ rename: r, pairs: spellingsFor(r, config.code) }));
+  const tokenPairs = pairsByRename.flatMap((entry) => entry.pairs);
   const classes = args['no-namespace-classes']
     ? { pairs: [], advisories: [] }
     : namespaceClassPairs(renames, { ...config.code, allTokenNames });
@@ -150,10 +155,9 @@ async function main() {
   // no pair for it, and without this the run reports "0 occurrences" and leaves
   // the reader wondering whether the scan is broken. It is not: there is
   // genuinely nothing on this side to change.
-  const spellingChanging = new Set(
-    tokenPairs.filter((p) => p.spelling !== 'figmaPath').map((p) => p.figmaFrom ?? p.from),
-  );
-  const inert = renames.filter((r) => !spellingChanging.has(r.from));
+  const inert = pairsByRename
+    .filter(({ pairs }) => !pairs.some((p) => p.spelling !== 'figmaPath'))
+    .map(({ rename }) => rename);
   if (inert.length) {
     console.log(
       `\n[apply-code] ${inert.length} rename(s) change no code spelling — regrouping only ` +

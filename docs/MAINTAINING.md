@@ -63,6 +63,7 @@ node "$S/review.mjs" skip <id>                         # ปล่อยไว�
 # 4. ตรวจก่อนแตะอะไร
 node "$S/check.mjs"           # เทียบกับ inventory
 node "$S/check.mjs" --code    # + สแกน repo ว่าจะโดนแก้กี่จุด
+node "$S/check.mjs" --code --no-namespace-classes   # ข้ามชื่อ class ที่ generator สร้าง
 
 # 5. สร้างสคริปต์สำหรับ Figma
 node "$S/emit-figma.mjs" --batch <id>
@@ -165,7 +166,7 @@ convention ที่ copy ไปไว้ในแต่ละโปรเจก
 มีสองอย่างที่ต้องผ่าน และเป็นคนละเรื่องกัน:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 157 เคส — สคริปต์ยังถูก
+node skills/figma-rename/scripts/selftest.mjs     # 159 เคส — สคริปต์ยังถูก
 ```
 
 กับ **eval** ใน `skills/figma-rename/evals/` ซึ่งทดสอบว่า *agent เดินกระบวนการถูก* —
