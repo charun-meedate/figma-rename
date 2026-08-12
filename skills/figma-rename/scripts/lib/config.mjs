@@ -206,10 +206,47 @@ export async function loadConfig(explicitPath) {
     renameMapPath: path.resolve(rootDir, config.renameMapPath),
     code: {
       ...config.code,
+      exclude: withArtifactExcludes(config, rootDir),
       roots: config.code.roots.map((r) => path.resolve(rootDir, r)),
       tokensConfig: config.code.tokensConfig ? path.resolve(rootDir, config.code.tokensConfig) : null,
     },
   };
+}
+
+/**
+ * The codemod must never rewrite this skill's own bookkeeping.
+ *
+ * `inventory.json` and `rename-map.json` are full of the old names — that is
+ * their job — and the default `code.include` matches `**\/*.json`. Left alone,
+ * `apply-code --write` rewrites the map's own `from` fields to equal its `to`
+ * fields, which quietly destroys everything downstream: `check` can no longer
+ * detect a stale map, `emit-figma --reverse` has no old name to walk back to,
+ * and `check --after` goes *vacuously green* because every from/to pair
+ * collapses and there is nothing left to search for.
+ *
+ * So these exclusions are appended unconditionally, after the user's config —
+ * a project cannot opt out of them by overriding `code.exclude`, because there
+ * is no legitimate reason to want to.
+ */
+function withArtifactExcludes(config, rootDir) {
+  const relative = (p) => path.relative(rootDir, path.resolve(rootDir, p)).split(path.sep).join('/');
+  const artifactDirs = new Set(
+    [config.inventoryPath, config.renameMapPath].map((p) => path.posix.dirname(relative(p))),
+  );
+
+  const forced = [relative(CONFIG_NAME)];
+  for (const dir of artifactDirs) {
+    // "." means the artefacts sit at the project root — exclude the two files
+    // themselves rather than the whole repo.
+    if (dir === '.' || dir === '') {
+      forced.push(relative(config.inventoryPath), relative(config.renameMapPath));
+    } else {
+      forced.push(`${dir}/**`, dir);
+    }
+  }
+
+  const already = new Set(config.code.exclude);
+  return [...config.code.exclude, ...forced.filter((p) => !already.has(p))];
 }
 
 /** Minimal flag parser: `--key value` and `--flag`. */

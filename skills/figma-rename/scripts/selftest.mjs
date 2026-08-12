@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { buildReplacer, namespaceClassPairs, rewrite, spellingsFor } from './lib/codemod.mjs';
 import { classifyComponent, findNameCollisions, suggestComponentName } from './lib/classify.mjs';
 import { compileConvention, normalizeName, proposeName } from './lib/convention.mjs';
+import { MAP_VERSION } from './lib/map.mjs';
 import {
   SHADE_CHROMATIC,
   SHADE_NEUTRAL,
@@ -1169,6 +1170,80 @@ test('check --after fails while a stale spelling is still in code', () => {
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });
+
+// ------------------------------------------------------- artefact protection
+
+section('artefact protection');
+
+test('apply-code --write never rewrites the map or the inventory', () => {
+  // Deliberately uses the SHIPPED defaults for code.include/exclude — the
+  // end-to-end fixture above excludes `**/rename/**` by hand, which is exactly
+  // what hid this bug. The default include matches `**/*.json`, the artefacts
+  // are full of old names, and `figmaPath` is a default spelling: without the
+  // forced exclusion the codemod rewrites the map's own `from` fields, and
+  // then `check --after` passes vacuously because every pair has collapsed.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-artefact-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({ figma: { fileKey: 'K' }, kinds: ['variable'], convention: { segmentCase: 'kebab' } }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({
+      entries: [{ kind: 'variable', id: 'V1', name: 'color/text-primary', scope: 'S', resolvedType: 'COLOR', value: { r: 0, g: 0, b: 0, a: 1 } }],
+    }),
+  );
+  const mapJson = JSON.stringify({
+    version: MAP_VERSION,
+    batches: [{ id: 'b', kind: 'variable', scope: 'S', renames: [{ id: 'V1', from: 'color/text-primary', to: 'text/primary/default', source: 'manual' }] }],
+    needsReview: [],
+  });
+  fs.writeFileSync(path.join(dir, 'rename/rename-map.json'), mapJson);
+  fs.writeFileSync(path.join(dir, 'src/a.css'), '.a { color: var(--color-text-primary); }\n');
+
+  const result = run('apply-code.mjs', ['--write'], dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(fs.readFileSync(path.join(dir, 'src/a.css'), 'utf8'), /--text-primary-default/, 'code should be rewritten');
+  assert.match(
+    fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'),
+    /"from":\s*"color\/text-primary"/,
+    'the map must still carry the OLD name, or nothing can be reversed or verified',
+  );
+  assert.match(
+    fs.readFileSync(path.join(dir, 'rename/inventory.json'), 'utf8'),
+    /"name":\s*"color\/text-primary"/,
+    'the inventory is the record of what the names WERE',
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the artefact exclusion cannot be overridden away', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-artefact2-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      // A project trying (or forgetting) to protect its artefacts.
+      code: { exclude: [] },
+    }),
+  );
+  fs.writeFileSync(path.join(dir, 'rename/inventory.json'), JSON.stringify({ entries: [] }));
+  fs.writeFileSync(
+    path.join(dir, 'rename/rename-map.json'),
+    JSON.stringify({ version: MAP_VERSION, batches: [], needsReview: [] }),
+  );
+  const result = run('plan.mjs', ['--print-config'], dir);
+  const printed = JSON.parse(result.out.slice(result.out.indexOf('{')));
+  assert.ok(
+    printed.code.exclude.some((p) => p.startsWith('rename/')),
+    `expected a forced rename/ exclusion, got ${JSON.stringify(printed.code.exclude)}`,
+  );
+  assert.ok(printed.code.exclude.includes('rename.config.json'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
