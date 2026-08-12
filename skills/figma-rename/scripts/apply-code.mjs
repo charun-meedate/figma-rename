@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 // apply-code.mjs — rewrite every reference in the codebase to match the rename.
 //
-//   node apply-code.mjs                       # dry run: what would change
+//   node apply-code.mjs                       # dry run over the batch(es) that are due
 //   node apply-code.mjs --batch <id> --write  # apply one batch
-//   node apply-code.mjs --write               # apply the whole map
+//   node apply-code.mjs --write               # apply every batch Figma is ahead on
+//
+// "Due" means status `figma-applied`: Figma has been renamed, the code has not.
+// A batch that has not reached Figma cannot be written, and one already applied
+// is refused as a no-op — so the codebase can never run ahead of the design.
 //
 // Dry run is the default on purpose. The interesting output is not "it worked",
 // it is the file list and the per-spelling counts — a spelling with zero hits
@@ -29,7 +33,7 @@ import {
 } from './lib/codemod.mjs';
 import { loadConfig, parseArgs } from './lib/config.mjs';
 import { loadInventory } from './lib/inventory.mjs';
-import { loadMap, selectRenames } from './lib/map.mjs';
+import { batchById, isFrozen, loadMap, pendingRenames, selectRenames, statusOf } from './lib/map.mjs';
 
 const TOKEN_KINDS = new Set(['variable', 'textStyle', 'effectStyle', 'paintStyle']);
 
@@ -38,8 +42,47 @@ async function main() {
   const config = await loadConfig(args.config);
   const map = await loadMap(config.renameMapPath);
   const inventory = await loadInventory(config.inventoryPath);
-  const renames = selectRenames(map, { batch: args.batch, kind: args.kind });
-  if (renames.length === 0) throw new Error('The rename map selects nothing to apply.');
+  // Default selection is the batches Figma is already ahead on — exactly the
+  // set whose code rewrite is DUE. Before v2 a bare `--write` rewrote every
+  // batch in the map, putting the codebase N batches ahead of Figma with
+  // nothing to catch it.
+  if (args.batch) {
+    const batch = batchById(map, args.batch);
+    const status = statusOf(batch);
+    if (args.write) {
+      if (status !== 'figma-applied') {
+        throw new Error(
+          status === 'planned'
+            ? `"${batch.id}" has not been renamed in Figma yet. Order matters:\n` +
+              `  node emit-figma.mjs --batch ${batch.id}   → run it in Figma\n` +
+              `  node review.mjs mark ${batch.id} --figma-applied\n` +
+              '  then this command'
+            : `"${batch.id}" is already applied — its code rewrite is done. Nothing to do.`,
+        );
+      }
+      const pending = pendingRenames(batch);
+      if (pending.length) {
+        throw new Error(`"${batch.id}" has ${pending.length} undecided row(s) — review first.`);
+      }
+    }
+  }
+
+  const statuses = args.batch ? undefined : ['figma-applied'];
+  const renames = selectRenames(map, {
+    batch: args.batch,
+    kind: args.kind,
+    statuses,
+    decisions: ['accepted'],
+  });
+  if (renames.length === 0) {
+    const inFlight = map.batches.filter((b) => statusOf(b) === 'figma-applied');
+    throw new Error(
+      inFlight.length
+        ? 'Nothing accepted to apply in the batches Figma is ahead on.'
+        : 'No batch is waiting for its code rewrite. Apply one in Figma first ' +
+          '(emit-figma → use_figma → review.mjs mark <id> --figma-applied).',
+    );
+  }
 
   const allTokenNames = inventory.entries.filter((e) => TOKEN_KINDS.has(e.kind)).map((e) => e.name);
   const tokenPairs = renames.flatMap((r) => spellingsFor(r, config.code));
@@ -60,6 +103,13 @@ async function main() {
     exclude: config.code.exclude,
     baseDir: config.rootDir,
   });
+  if (args['include-generated']) {
+    console.log(
+      '[apply-code] WARNING --include-generated: these files are rebuilt from tokens.json. ' +
+        'Patching them here is either erased by the next generate, or it is not — and then they ' +
+        'disagree with tokens.json and `generate --check` reports drift with no obvious cause.',
+    );
+  }
   const files = args['include-generated']
     ? all
     : all.filter((f) => !matchesAnyPath(path.relative(config.rootDir, f).split(path.sep).join('/'), generatedRe));
@@ -114,7 +164,9 @@ async function main() {
     console.log('\n[apply-code] dry run. Re-run with --write to apply.');
     return;
   }
-  console.log('\n[apply-code] applied. Next: rebuild, run the test suite, then node check.mjs --after');
+  console.log('\n[apply-code] applied. Next: rebuild, run the test suite, then:');
+  console.log('[apply-code]   node check.mjs --after');
+  if (args.batch) console.log(`[apply-code]   node review.mjs mark ${args.batch} --applied     then commit`);
 }
 
 main().catch((err) => {

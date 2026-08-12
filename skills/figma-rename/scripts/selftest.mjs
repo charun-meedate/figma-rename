@@ -101,6 +101,37 @@ function run(script, args, cwd) {
   }
 }
 
+
+/**
+ * Walks a project's planned batches through review, the way a real run does.
+ *
+ * Every CLI past `plan` now refuses undecided rows and refuses to run out of
+ * order, so the tests have to do what a user does: accept, then mark. Faking it
+ * by hand-writing statuses into the map would test the fixture, not the gates.
+ */
+function acceptEverything(dir) {
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  for (const batch of map.batches) {
+    if ((batch.status ?? 'planned') !== 'planned' || !batch.renames.length) continue;
+    const result = run('review.mjs', ['accept', '--batch', batch.id, '--all'], dir);
+    if (!result.ok) throw new Error(`review accept failed for ${batch.id}: ${result.out}`);
+  }
+}
+
+function markFigmaApplied(dir, batchId) {
+  const result = run('review.mjs', ['mark', batchId, '--figma-applied'], dir);
+  if (!result.ok) throw new Error(`mark failed for ${batchId}: ${result.out}`);
+}
+
+/** Accepts, then marks every planned batch as applied in Figma. */
+function applyInFigma(dir) {
+  acceptEverything(dir);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  for (const batch of map.batches) {
+    if ((batch.status ?? 'planned') === 'planned' && batch.renames.length) markFigmaApplied(dir, batch.id);
+  }
+}
+
 // ---------------------------------------------------------------- convention
 
 section('convention');
@@ -1005,6 +1036,7 @@ test('check refuses a rename that collides in generated code but not in Figma', 
 });
 
 test('emit-figma prints a validate-then-mutate script with the real ids', () => {
+  acceptEverything(tmp);
   const result = run('emit-figma.mjs', ['--batch', 'variable-semantic'], tmp);
   assert.equal(result.ok, true, result.out);
   assert.match(result.out, /getVariableByIdAsync/);
@@ -1016,6 +1048,8 @@ test('emit-figma prints a validate-then-mutate script with the real ids', () => 
 });
 
 test('emit-figma --reverse swaps the direction for rollback', () => {
+  acceptEverything(tmp);
+  markFigmaApplied(tmp, 'variable-semantic');
   const result = run('emit-figma.mjs', ['--batch', 'variable-semantic', '--reverse'], tmp);
   assert.equal(result.ok, true, result.out);
   assert.match(result.out, /"VariableID:1:1", "text\/primary\/default", "color\/text-primary"/);
@@ -1023,11 +1057,20 @@ test('emit-figma --reverse swaps the direction for rollback', () => {
 });
 
 test('emit-figma --with-code-syntax records the code name back into Figma', () => {
-  const result = run('emit-figma.mjs', ['--batch', 'variable-semantic', '--with-code-syntax'], tmp);
+  // Its own project: the shared one has a batch mid-flight by now, and the
+  // one-batch-at-a-time guard would (correctly) refuse a second forward emit.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-syntax-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'rename.config.json'), JSON.stringify(config, null, 2));
+  fs.writeFileSync(path.join(dir, 'rename/inventory.json'), JSON.stringify(inventory, null, 2));
+  assert.equal(run('plan.mjs', [], dir).ok, true);
+  acceptEverything(dir);
+  const result = run('emit-figma.mjs', ['--batch', 'variable-semantic', '--with-code-syntax'], dir);
   assert.equal(result.ok, true, result.out);
   assert.match(result.out, /var\(--text-primary-default\)/);
   assert.match(result.out, /setVariableCodeSyntax/);
   assertParses(result.out, 'the emitted code-syntax script');
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('emit-figma stages a rename chain through temporary names', () => {
@@ -1039,16 +1082,17 @@ test('emit-figma stages a rename chain through temporary names', () => {
     path.join(chainDir, 'rename/rename-map.json'),
     JSON.stringify(
       {
-        version: 1,
+        version: MAP_VERSION,
         fileKey: 'FILEKEY0000000000000000',
         batches: [
           {
             id: 'chain',
             kind: 'variable',
             scope: 'Semantic',
+            status: 'planned',
             renames: [
-              { id: 'VariableID:1:1', from: 'color/text-primary', to: 'color/bg-raised' },
-              { id: 'VariableID:1:2', from: 'color/bg-raised', to: 'text/primary/default' },
+              { id: 'VariableID:1:1', from: 'color/text-primary', to: 'color/bg-raised', decision: 'accepted' },
+              { id: 'VariableID:1:2', from: 'color/bg-raised', to: 'text/primary/default', decision: 'accepted' },
             ],
           },
         ],
@@ -1103,6 +1147,7 @@ test('a component batch carries its page, and emit-figma switches to it once', (
   assert.ok(map.batches[0].renames[0].codeSuggestion);
   assert.equal(map.batches[0].renames[0].code, undefined);
 
+  acceptEverything(dir);
   const emitted = run('emit-figma.mjs', ['--batch', map.batches[0].id], dir);
   assert.equal(emitted.ok, true, emitted.out);
   assert.match(emitted.out, /setCurrentPageAsync/);
@@ -1113,6 +1158,7 @@ test('a component batch carries its page, and emit-figma switches to it once', (
 });
 
 test('apply-code dry run changes nothing on disk', () => {
+  applyInFigma(tmp);
   const before = fs.readFileSync(path.join(tmp, 'src/app/button.css'), 'utf8');
   const result = run('apply-code.mjs', [], tmp);
   assert.equal(result.ok, true, result.out);
@@ -1121,6 +1167,7 @@ test('apply-code dry run changes nothing on disk', () => {
 });
 
 test('apply-code --write rewrites consumers and leaves generated files to the generator', () => {
+  applyInFigma(tmp);
   const result = run('apply-code.mjs', ['--write'], tmp);
   assert.equal(result.ok, true, result.out);
 
@@ -1197,7 +1244,10 @@ test('apply-code --write never rewrites the map or the inventory', () => {
   );
   const mapJson = JSON.stringify({
     version: MAP_VERSION,
-    batches: [{ id: 'b', kind: 'variable', scope: 'S', renames: [{ id: 'V1', from: 'color/text-primary', to: 'text/primary/default', source: 'manual' }] }],
+    batches: [{
+      id: 'b', kind: 'variable', scope: 'S', status: 'figma-applied',
+      renames: [{ id: 'V1', from: 'color/text-primary', to: 'text/primary/default', source: 'manual', decision: 'accepted' }],
+    }],
     needsReview: [],
   });
   fs.writeFileSync(path.join(dir, 'rename/rename-map.json'), mapJson);
@@ -1243,6 +1293,384 @@ test('the artefact exclusion cannot be overridden away', () => {
   );
   assert.ok(printed.code.exclude.includes('rename.config.json'));
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------- batch lifecycle
+
+section('batch lifecycle');
+
+/** A two-batch project, the shape every multi-batch defect needed. */
+function lifecycleProject() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-life-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['variable'],
+      convention: {
+        segmentCase: 'kebab',
+        rules: [
+          { match: 'color/text-*', to: 'text/$1/default' },
+          { match: 'color/bg-*', to: 'surface/$1' },
+        ],
+      },
+      code: { roots: ['.'], include: ['**/*.css'], exclude: [], generated: [] },
+    }),
+  );
+  const writeInventory = (names) =>
+    fs.writeFileSync(
+      path.join(dir, 'rename/inventory.json'),
+      JSON.stringify({
+        entries: [
+          { kind: 'variable', id: 'V1', name: names.v1, scope: 'S1', resolvedType: 'COLOR', value: { r: 0, g: 0, b: 0, a: 1 } },
+          { kind: 'variable', id: 'V2', name: names.v2, scope: 'S2', resolvedType: 'COLOR', value: { r: 1, g: 1, b: 1, a: 1 } },
+        ],
+      }),
+    );
+  writeInventory({ v1: 'color/text-primary', v2: 'color/bg-raised' });
+  fs.writeFileSync(path.join(dir, 'src/a.css'), '.a{color:var(--color-text-primary);background:var(--color-bg-raised)}\n');
+  const readMap = () => JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  return { dir, readMap, writeInventory, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('plan marks every new row pending', () => {
+  const p = lifecycleProject();
+  assert.equal(run('plan.mjs', [], p.dir).ok, true);
+  const rows = p.readMap().batches.flatMap((b) => b.renames);
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((r) => r.decision === 'pending'), JSON.stringify(rows));
+  p.cleanup();
+});
+
+test('emit-figma refuses a batch with undecided rows', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  const result = run('emit-figma.mjs', ['--batch', 'variable-s1'], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /undecided/);
+  assert.match(result.out, /review\.mjs accept/);
+  p.cleanup();
+});
+
+test('apply-code --write refuses a batch Figma has not applied', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  const result = run('apply-code.mjs', ['--batch', 'variable-s1', '--write'], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /has not been renamed in Figma yet/);
+  assert.equal(fs.readFileSync(path.join(p.dir, 'src/a.css'), 'utf8').includes('--text-primary-default'), false);
+  p.cleanup();
+});
+
+test('emit-figma refuses a second batch while one is in flight', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s2', '--all'], p.dir);
+  run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  const blocked = run('emit-figma.mjs', ['--batch', 'variable-s2'], p.dir);
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.out, /already applied in Figma but not in code/);
+  // --force is the documented escape, and it must actually work.
+  assert.equal(run('emit-figma.mjs', ['--batch', 'variable-s2', '--force'], p.dir).ok, true);
+  p.cleanup();
+});
+
+test('mark refuses to skip a step', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  const jump = run('review.mjs', ['mark', 'variable-s1', '--applied'], p.dir);
+  assert.equal(jump.ok, false);
+  assert.match(jump.out, /one step at a time/);
+  p.cleanup();
+});
+
+test('mark --figma-applied refuses undecided rows', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  const result = run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /undecided/);
+  p.cleanup();
+});
+
+test('check --after with no --batch ignores batches that have not gone out', () => {
+  // The defect: after applying batch 1 of 2, batch 2's old names are still in
+  // code (correctly), and a bare `check --after` reported them as stale.
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s2', '--all'], p.dir);
+  run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  run('apply-code.mjs', ['--batch', 'variable-s1', '--write'], p.dir);
+  const result = run('check.mjs', ['--after'], p.dir);
+  assert.equal(result.ok, true, result.out);
+  const css = fs.readFileSync(path.join(p.dir, 'src/a.css'), 'utf8');
+  assert.match(css, /--text-primary-default/, 'batch 1 rewritten');
+  assert.match(css, /--color-bg-raised/, 'batch 2 deliberately untouched');
+  p.cleanup();
+});
+
+test('check --after says so when nothing has been applied', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  const result = run('check.mjs', ['--after'], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /nothing has been applied/);
+  p.cleanup();
+});
+
+test('check passes on a re-captured inventory with an applied batch', () => {
+  // The other half of the same defect: the manual says re-capture before every
+  // planning pass, and doing so used to hard-error on work already finished.
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s2', '--all'], p.dir);
+  run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  p.writeInventory({ v1: 'text/primary/default', v2: 'color/bg-raised' });
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  p.cleanup();
+});
+
+test('check warns when an applied name was renamed again in Figma', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s2', '--all'], p.dir);
+  run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  p.writeInventory({ v1: 'someone/renamed/it', v2: 'color/bg-raised' });
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /renamed again outside this tool/);
+  p.cleanup();
+});
+
+test('re-plan freezes an applied batch and keeps its id', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  p.writeInventory({ v1: 'text/primary/default', v2: 'color/bg-raised' });
+  const result = run('plan.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /1 applied batch\(es\) frozen/);
+  const frozen = p.readMap().batches.find((b) => b.id === 'variable-s1');
+  assert.equal(frozen.status, 'figma-applied');
+  assert.equal(frozen.renames[0].from, 'color/text-primary', 'the old name must survive for rollback');
+  p.cleanup();
+});
+
+test('emit-figma --reverse still resolves an applied batch after a re-plan', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  p.writeInventory({ v1: 'text/primary/default', v2: 'color/bg-raised' });
+  run('plan.mjs', [], p.dir);
+  run('plan.mjs', [], p.dir);
+  const result = run('emit-figma.mjs', ['--batch', 'variable-s1', '--reverse'], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /"V1", "text\/primary\/default", "color\/text-primary"/);
+  p.cleanup();
+});
+
+test('re-plan does not resurrect a rejected rename', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['reject', '--batch', 'variable-s2', '--all', '--note', 'keep it'], p.dir);
+  const result = run('plan.mjs', [], p.dir);
+  assert.match(result.out, /1 rejection\(s\) kept/);
+  const row = p.readMap().batches.find((b) => b.id === 'variable-s2').renames[0];
+  assert.equal(row.decision, 'rejected');
+  assert.equal(row.note, 'keep it');
+  p.cleanup();
+});
+
+test('re-plan preserves a hand-edited target', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['set-to', 'V1', '--to', 'text/brand/default'], p.dir);
+  const result = run('plan.mjs', [], p.dir);
+  assert.match(result.out, /1 decision\(s\) carried/);
+  const row = p.readMap().batches.flatMap((b) => b.renames).find((r) => r.id === 'V1');
+  assert.equal(row.to, 'text/brand/default');
+  assert.equal(row.decision, 'accepted');
+  assert.equal(row.source, 'human');
+  p.cleanup();
+});
+
+test('re-plan resets a decision when the convention changes the target', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s2', '--all'], p.dir);
+  // The team changes the standard: bg-* now lands somewhere else.
+  const cfg = JSON.parse(fs.readFileSync(path.join(p.dir, 'rename.config.json'), 'utf8'));
+  cfg.convention.rules[1].to = 'background/$1';
+  fs.writeFileSync(path.join(p.dir, 'rename.config.json'), JSON.stringify(cfg));
+  const result = run('plan.mjs', [], p.dir);
+  assert.match(result.out, /1 reset \(target changed\)/);
+  const row = p.readMap().batches.flatMap((b) => b.renames).find((r) => r.id === 'V2');
+  assert.equal(row.decision, 'pending', 'a verdict on one name must not carry to another');
+  assert.match(row.note, /target changed/);
+  p.cleanup();
+});
+
+test('check refuses a map planned under a different convention', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  const cfg = JSON.parse(fs.readFileSync(path.join(p.dir, 'rename.config.json'), 'utf8'));
+  cfg.convention.segmentCase = 'snake';
+  fs.writeFileSync(path.join(p.dir, 'rename.config.json'), JSON.stringify(cfg));
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /planned under a different convention/);
+  assert.equal(run('check.mjs', ['--allow-convention-drift'], p.dir).ok, true, 'the escape hatch must work');
+  p.cleanup();
+});
+
+test('rejected rows are invisible to emit, apply-code and check --after', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  run('review.mjs', ['reject', '--batch', 'variable-s2', '--all'], p.dir);
+  run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  const emitted = run('emit-figma.mjs', ['--batch', 'variable-s1'], p.dir);
+  assert.equal(emitted.out.includes('color/bg-raised'), false, 'a rejected row must not be emitted');
+  run('apply-code.mjs', ['--write'], p.dir);
+  const css = fs.readFileSync(path.join(p.dir, 'src/a.css'), 'utf8');
+  assert.match(css, /--color-bg-raised/, 'a rejected rename must not touch code');
+  assert.equal(run('check.mjs', ['--after'], p.dir).ok, true);
+  p.cleanup();
+});
+
+test('a batch with every row rejected cannot be marked applied', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['reject', '--batch', 'variable-s1', '--all'], p.dir);
+  const result = run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /nothing accepted/);
+  p.cleanup();
+});
+
+test('check refuses one id renamed by two pending batches', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  const map = p.readMap();
+  map.batches[1].renames.push({ ...map.batches[0].renames[0], decision: 'accepted' });
+  fs.writeFileSync(path.join(p.dir, 'rename/rename-map.json'), JSON.stringify(map, null, 2));
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /renamed by both/);
+  p.cleanup();
+});
+
+test('review list prints every row, and status names the open questions', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  const list = run('review.mjs', ['list', '--batch', 'variable-s1'], p.dir);
+  assert.equal(list.ok, true, list.out);
+  assert.match(list.out, /color\/text-primary {2}-> {2}text\/primary\/default/);
+  assert.match(list.out, /id: V1/);
+  const json = run('review.mjs', ['list', '--batch', 'variable-s1', '--json'], p.dir);
+  assert.equal(JSON.parse(json.out).renames.length, 1);
+  p.cleanup();
+});
+
+test('review accept --rule decides a whole group at once', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  const rule = p.readMap().batches[0].renames[0].rule;
+  const result = run('review.mjs', ['accept', '--batch', 'variable-s1', '--rule', rule], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.equal(p.readMap().batches[0].renames[0].decision, 'accepted');
+  const missing = run('review.mjs', ['accept', '--batch', 'variable-s1', '--rule', 'nope'], p.dir);
+  assert.equal(missing.ok, false);
+  assert.match(missing.out, /Rules in this batch/);
+  p.cleanup();
+});
+
+test('review refuses to decide on a batch that has already gone out', () => {
+  const p = lifecycleProject();
+  run('plan.mjs', [], p.dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s1', '--all'], p.dir);
+  run('review.mjs', ['mark', 'variable-s1', '--figma-applied'], p.dir);
+  const result = run('review.mjs', ['reject', '--batch', 'variable-s1', '--all'], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /already gone out/);
+  p.cleanup();
+});
+
+test('a skipped needsReview item survives a re-plan', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-skip-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['variable'],
+      convention: { segmentCase: 'kebab', structure: { minSegments: 2 } },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({ entries: [{ kind: 'variable', id: 'V9', name: 'brand', scope: 'S', resolvedType: 'COLOR', value: { r: 1, g: 0, b: 0, a: 1 } }] }),
+  );
+  run('plan.mjs', [], dir);
+  const before = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  assert.equal(before.needsReview.length, 1, JSON.stringify(before.needsReview));
+  assert.equal(run('review.mjs', ['skip', 'V9', '--note', 'brand is fine'], dir).ok, true);
+  const result = run('plan.mjs', [], dir);
+  assert.match(result.out, /1 skip\(s\) preserved/);
+  const after = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  assert.equal(after.needsReview.filter((i) => (i.decision ?? 'pending') === 'pending').length, 0, 'must not be asked again');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('review resolve moves an open question into a batch as accepted', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-resolve-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['variable'],
+      convention: { segmentCase: 'kebab', structure: { minSegments: 2 } },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({ entries: [{ kind: 'variable', id: 'V9', name: 'brand', scope: 'S', resolvedType: 'COLOR', value: { r: 1, g: 0, b: 0, a: 1 } }] }),
+  );
+  run('plan.mjs', [], dir);
+  const result = run('review.mjs', ['resolve', 'V9', '--to', 'palette/brand'], dir);
+  assert.equal(result.ok, true, result.out);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  assert.equal(map.needsReview.length, 0);
+  const row = map.batches.flatMap((b) => b.renames).find((r) => r.id === 'V9');
+  assert.equal(row.to, 'palette/brand');
+  assert.equal(row.decision, 'accepted');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a v1 map is refused with an explanation, not upgraded silently', () => {
+  const p = lifecycleProject();
+  fs.writeFileSync(
+    path.join(p.dir, 'rename/rename-map.json'),
+    JSON.stringify({ version: 1, batches: [], needsReview: [] }),
+  );
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /version 1/);
+  assert.match(result.out, /delete it and run plan\.mjs again/);
+  p.cleanup();
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

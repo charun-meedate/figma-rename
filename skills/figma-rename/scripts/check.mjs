@@ -5,6 +5,11 @@
 //   node check.mjs --code         # also scan the codebase: how many hits each rename has
 //   node check.mjs --after        # post-apply: assert no old spelling survives
 //
+// Status-aware. Planned batches are checked forwards (the inventory should still
+// hold `from`); batches that already went out are checked backwards (it should
+// hold `to`), so re-capturing the inventory mid-run is safe. `--after` looks
+// only at what has been applied.
+//
 // This runs before anything is applied, because every failure it catches is
 // cheap here and expensive later: a duplicate name is a thrown error halfway
 // through a Figma batch, and an identifier collision is a token that silently
@@ -23,7 +28,15 @@ import {
 } from './lib/codemod.mjs';
 import { loadConfig, parseArgs } from './lib/config.mjs';
 import { bucketOf, loadInventory } from './lib/inventory.mjs';
-import { findChains, loadMap, selectRenames } from './lib/map.mjs';
+import {
+  conventionHash,
+  findChains,
+  findDuplicateIds,
+  isFrozen,
+  loadMap,
+  selectRenames,
+  statusOf,
+} from './lib/map.mjs';
 import { assertUniqueIdentifiers, toCamel, toKebab } from './lib/naming.mjs';
 
 const TOKEN_KINDS = new Set(['variable', 'textStyle', 'effectStyle', 'paintStyle']);
@@ -46,17 +59,64 @@ async function main() {
   const config = await loadConfig(args.config);
   const map = await loadMap(config.renameMapPath);
   const inventory = await loadInventory(config.inventoryPath);
-  const renames = selectRenames(map, { batch: args.batch, kind: args.kind });
 
   const allTokenNames = inventory.entries.filter((e) => TOKEN_KINDS.has(e.kind)).map((e) => e.name);
 
-  if (args.after) return checkAfter(config, renames, allTokenNames);
+  if (args.after) {
+    // Only what has actually gone out. Scanning planned batches here was the
+    // reason a bare `check --after` failed on every multi-batch run: batches
+    // 2..N legitimately still use their old names in code.
+    const applied = selectRenames(map, {
+      batch: args.batch,
+      kind: args.kind,
+      statuses: ['figma-applied', 'applied'],
+      decisions: ['accepted'],
+    });
+    if (!applied.length) {
+      console.log('[check] nothing has been applied yet — nothing to verify.');
+      return;
+    }
+    return checkAfter(config, applied, allTokenNames);
+  }
 
   const errors = [];
   const warnings = [];
 
+  // ---- the map was planned under the convention that is loaded now --------
+  const currentHash = conventionHash(config.convention);
+  if (map.conventionHash && map.conventionHash !== currentHash && !args['allow-convention-drift']) {
+    errors.push(
+      'This map was planned under a different convention than the one loading now ' +
+        `(map ${map.conventionHash}, config ${currentHash}). Applying it would produce names nobody chose — ` +
+        'and every individual rename would still look internally consistent, so the diff would not show it. ' +
+        'Re-plan (the merge keeps your decisions), or pass --allow-convention-drift if you know why they differ.',
+    );
+  }
+
+  // ---- one id may not be in two batches that are both still waiting -------
+  for (const clash of findDuplicateIds(map)) {
+    errors.push(
+      `id ${clash.id} ("${clash.name}") is renamed by both ${clash.batches.join(' and ')}. ` +
+        'The first apply moves the name and the second throws halfway through — put it in one batch.',
+    );
+  }
+
+  const pendingRows = selectRenames(map, {
+    batch: args.batch,
+    kind: args.kind,
+    statuses: ['planned'],
+    decisions: ['accepted', 'pending'],
+  });
+  const undecided = pendingRows.filter((r) => (r.decision ?? 'pending') === 'pending');
+  if (undecided.length) {
+    warnings.push(
+      `${undecided.length} row(s) are still undecided — emit-figma will refuse them. ` +
+        'Run: node review.mjs status',
+    );
+  }
+
   // ---- the map still describes the file it was planned against ------------
-  for (const r of renames) {
+  for (const r of pendingRows) {
     const entry = inventory.byId.get(r.id);
     if (!entry) {
       errors.push(`${r.batchId}: id ${r.id} ("${r.from}") is not in the inventory — re-capture it and re-plan.`);
@@ -73,6 +133,30 @@ async function main() {
     }
     checkNameLegality(r.to, errors, r.batchId);
   }
+
+  // ---- batches that already went out are checked BACKWARDS ----------------
+  //
+  // For an applied batch the inventory should now hold the NEW name. Checking
+  // `from` there is what used to hard-error the moment someone followed the
+  // manual's "re-capture before every planning pass" — work already finished
+  // reported as a stale map.
+  const appliedRows = selectRenames(map, {
+    kind: args.kind,
+    statuses: ['figma-applied', 'applied'],
+    decisions: ['accepted'],
+  });
+  for (const r of appliedRows) {
+    const entry = inventory.byId.get(r.id);
+    if (!entry) continue; // deleted in Figma since; not this command's business
+    if (entry.name !== r.to && entry.name !== r.from) {
+      warnings.push(
+        `${r.batchId}: "${r.to}" was applied but is now called "${entry.name}" in Figma — ` +
+          'renamed again outside this tool. A re-plan will pick it up.',
+      );
+    }
+  }
+
+  const renames = pendingRows;
 
   // ---- no two things end up with the same name in one namespace -----------
   const byBucket = new Map();
@@ -233,7 +317,7 @@ async function checkAfter(config, renames, allTokenNames) {
   report(
     leftovers.map((l) => `stale name still in code — ${l}`),
     [],
-    `${files.length} file(s) scanned for ${pairs.length} old spelling(s)`,
+    `${files.length} file(s) scanned for ${pairs.length} old spelling(s) from applied batch(es)`,
   );
 }
 

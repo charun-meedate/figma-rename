@@ -7,21 +7,24 @@
 //   node plan.mjs --max-batch 25           # smaller batches
 //   node plan.mjs --min-confidence medium  # drop low-confidence suggestions
 //   node plan.mjs --no-suggest             # convention rules only
+//   node plan.mjs --fresh                  # discard pending decisions, keep applied batches
 //   node plan.mjs --dry-run                # print the summary, write nothing
 //
 // Two sources feed the map: the convention rules (what the team decided) and
 // the value-based suggest engine (what the values say). Rules win where both
 // have an opinion — see references/suggest-engine.md.
 //
-// The output is a PROPOSAL. Nothing in it reaches Figma or the codebase until
-// a human has read it and `check.mjs` has passed. Names the convention cannot
+// The output is a PROPOSAL, and re-running MERGES rather than overwrites:
+// batches that already reached Figma are frozen, and every decision recorded
+// through review.mjs is carried forward. Nothing reaches Figma or the codebase
+// until it has been accepted in review and `check.mjs` has passed. Names the convention cannot
 // decide mechanically come back under `needsReview` with `to: null` rather
 // than a confident guess.
 
 import { loadConfig, parseArgs } from './lib/config.mjs';
 import { compileConvention, compileGlob, matchesAny, proposeName } from './lib/convention.mjs';
-import { bucketOf, loadInventory } from './lib/inventory.mjs';
-import { MAP_VERSION, writeMap } from './lib/map.mjs';
+import { loadInventory } from './lib/inventory.mjs';
+import { MAP_VERSION, conventionHash, loadMapIfPresent, mergePlans, writeMap } from './lib/map.mjs';
 import { toPascal } from './lib/naming.mjs';
 import { isGenericName, suggestForEntries } from './lib/suggest.mjs';
 
@@ -171,7 +174,10 @@ async function main() {
       groups.set(key, { kind: entry.kind, scope: entry.scope ?? null, pageIds: new Set(), renames: [] });
     }
     if (entry.pageId) groups.get(key).pageIds.add(entry.pageId);
-    const rename = { id: entry.id, from: entry.name, to, source };
+    // `decision` is written explicitly rather than left to default, because the
+    // map is something a person reads: a row with no decision field looks
+    // decided, and it is not.
+    const rename = { id: entry.id, from: entry.name, to, source, decision: 'pending' };
     if (rule) rename.rule = rule;
     // `reason` and `confidence` are what make a 300-line map reviewable: the
     // question at review time becomes "is this reason true", not "do I like
@@ -188,6 +194,7 @@ async function main() {
   }
 
   const batches = [];
+  const usedIds = new Set();
   for (const [key, group] of groups) {
     const chunks = [];
     for (let i = 0; i < group.renames.length; i += maxBatch) {
@@ -200,12 +207,25 @@ async function main() {
     const pageIds = [...group.pageIds];
     chunks.forEach((renames, i) => {
       const base = `${group.kind}-${slug(group.scope ?? key)}`;
+      const id = chunks.length > 1 ? `${base}-${i + 1}` : base;
+      // Two collections named "1. Primitive" and "1 Primitive" slug to the same
+      // thing. Caught here, where the cause is visible, rather than surfacing
+      // later as a "duplicate batch id" error that looks like check's fault.
+      if (usedIds.has(id)) {
+        console.log(
+          `[plan] warning: two scopes slug to the batch id "${id}" ` +
+            `(this one is "${group.scope}") — the second becomes "${id}-b". ` +
+            'Rename one of the collections to keep the ids meaningful.',
+        );
+      }
+      const uniqueId = usedIds.has(id) ? `${id}-b` : id;
+      usedIds.add(uniqueId);
       batches.push({
-        id: chunks.length > 1 ? `${base}-${i + 1}` : base,
+        id: uniqueId,
         kind: group.kind,
         scope: group.scope,
         pageId: pageIds.length === 1 ? pageIds[0] : null,
-        bucket: bucketOf({ kind: group.kind, scope: group.scope }),
+        status: 'planned',
         renames,
       });
     });
@@ -217,16 +237,39 @@ async function main() {
     }
   }
 
-  const map = {
+  const proposal = {
     version: MAP_VERSION,
     fileKey: config.figma?.fileKey ?? inventory.fileKey ?? null,
     convention: config.convention,
+    conventionHash: conventionHash(config.convention),
     ...(calibration ? { calibration } : {}),
     batches,
     needsReview,
   };
 
-  const total = batches.reduce((n, b) => n + b.renames.length, 0);
+  // Merge, never overwrite: anything that reached Figma is frozen, and every
+  // human decision made through review.mjs is carried forward.
+  const previous = await loadMapIfPresent(config.renameMapPath);
+  const { map, report } = mergePlans(previous, proposal, { fresh: Boolean(args.fresh) });
+  if (previous) {
+    const parts = [];
+    if (report.frozen) parts.push(`${report.frozen} applied batch(es) frozen`);
+    if (report.carried) parts.push(`${report.carried} decision(s) carried`);
+    if (report.rejectedKept) parts.push(`${report.rejectedKept} rejection(s) kept`);
+    if (report.reset) parts.push(`${report.reset} reset (target changed)`);
+    if (report.skipsKept) parts.push(`${report.skipsKept} skip(s) preserved`);
+    if (report.newRows) parts.push(`${report.newRows} new`);
+    console.log(`[plan] merged with the existing map — ${parts.join(', ') || 'nothing to carry'}`);
+    const inFlight = map.batches.filter((b) => (b.status ?? 'planned') === 'figma-applied');
+    for (const batch of inFlight) {
+      console.log(
+        `[plan] warning: batch "${batch.id}" is figma-applied — Figma is ahead of the code. ` +
+          'Finish it (apply-code, check --after, mark --applied) before working on anything else.',
+      );
+    }
+  }
+
+  const total = map.batches.reduce((n, b) => n + b.renames.length, 0);
   console.log(`[plan] ${scoped.length} inventory entr${scoped.length === 1 ? 'y' : 'ies'} in scope`);
   for (const [status, n] of Object.entries(counts)) {
     if (n) console.log(`[plan]   ${status.padEnd(11)} ${n}`);
@@ -237,21 +280,24 @@ async function main() {
     console.log(`[plan] shade ladders — chromatic: ${describe(calibration.chromatic)}; neutral: ${describe(calibration.neutral)}`);
     if (calibration.families) console.log(`[plan]   ${calibration.families} ramp(s) calibrated individually`);
   }
-  console.log(`[plan] ${total} rename(s) across ${batches.length} batch(es)`);
-  for (const batch of batches) {
-    console.log(`[plan]   ${batch.id} — ${batch.renames.length}`);
+  console.log(`[plan] ${total} rename(s) across ${map.batches.length} batch(es)`);
+  for (const batch of map.batches) {
+    const status = (batch.status ?? 'planned') === 'planned' ? '' : `  [${batch.status}]`;
+    console.log(`[plan]   ${batch.id} — ${batch.renames.length}${status}`);
+    if (batch.status && batch.status !== 'planned') continue; // frozen: nothing to review
     for (const r of batch.renames.slice(0, 5)) {
       const note = r.confidence ? `   [${r.confidence}] ${r.reason}` : '';
       console.log(`[plan]     ${r.from}  ->  ${r.to}${note}`);
     }
     if (batch.renames.length > 5) console.log(`[plan]     … ${batch.renames.length - 5} more`);
   }
-  if (needsReview.length) {
-    console.log(`\n[plan] ${needsReview.length} name(s) the convention will not decide — edit them by hand:`);
-    for (const item of needsReview.slice(0, 10)) {
+  const openReview = map.needsReview.filter((i) => (i.decision ?? 'pending') === 'pending');
+  if (openReview.length) {
+    console.log(`\n[plan] ${openReview.length} name(s) the convention will not decide — you answer these:`);
+    for (const item of openReview.slice(0, 10)) {
       console.log(`[plan]   ${item.name}${item.suggestion ? ` (would be "${item.suggestion}")` : ''} — ${item.why}`);
     }
-    if (needsReview.length > 10) console.log(`[plan]   … ${needsReview.length - 10} more in the map`);
+    if (openReview.length > 10) console.log(`[plan]   … ${openReview.length - 10} more`);
   }
 
   if (args['dry-run']) {
@@ -261,7 +307,9 @@ async function main() {
 
   await writeMap(config.renameMapPath, map);
   console.log(`\n[plan] wrote ${config.renameMapPath}`);
-  console.log('[plan] read it, edit it, then: node check.mjs');
+  // The preview above is truncated on purpose; review.mjs is where the full
+  // list lives, and it is also the only thing that can record a decision.
+  console.log('[plan] next: node review.mjs status        (then accept/reject, then check.mjs)');
 }
 
 main().catch((err) => {
