@@ -150,6 +150,7 @@ export async function loadConfig(explicitPath) {
   }
 
   let extendsFrom = null;
+  let ownConvention = {};
   if (parsed.extends !== undefined && typeof parsed.extends !== 'string') {
     throw new Error(
       `Invalid ${configPath}: \`extends\` must be a string — a preset name ("aurora") or a path ` +
@@ -158,10 +159,20 @@ export async function loadConfig(explicitPath) {
   }
   if (parsed.extends) {
     extendsFrom = parsed.extends;
+    ownConvention = parsed.convention ?? {};
     parsed = mergeConfig(await resolveExtends(parsed.extends, rootDir), parsed);
   }
 
-  const config = { ...DEFAULTS, ...parsed, extendsFrom };
+  // Which naming decisions this PROJECT made, as opposed to inherited. plan.mjs
+  // uses it to tell a first run apart from a considered one: a config that
+  // extends a preset and overrides none of these was never discussed with
+  // anyone, and the names it produces will look decided when they are not.
+  const FORMAT_KEYS = ['segmentCase', 'separator', 'sizeNaming', 'transform', 'rules', 'aliases', 'structure'];
+  const ownFormatKeys = extendsFrom
+    ? FORMAT_KEYS.filter((k) => ownConvention[k] !== undefined)
+    : FORMAT_KEYS;
+
+  const config = { ...DEFAULTS, ...parsed, extendsFrom, ownFormatKeys };
   config.code = { ...CODE_DEFAULTS, ...(parsed.code ?? {}) };
   config.convention = config.convention ?? {};
 
@@ -269,7 +280,7 @@ export async function loadConfig(explicitPath) {
       .filter((k) => !k.startsWith('$') && !known.includes(k))
       .map((k) => `${where}${k}\` is not a setting. Valid: ${known.join(', ')}.`);
   errors.push(
-    ...unknown(config, [...KNOWN_TOP, 'extendsFrom'], '`'),
+    ...unknown(config, [...KNOWN_TOP, 'extendsFrom', 'ownFormatKeys'], '`'),
     ...unknown(config.convention, KNOWN_CONVENTION, '`convention.'),
     ...unknown(config.convention?.components, KNOWN_COMPONENTS, '`convention.components.'),
     ...unknown(config.convention?.components?.classifier, KNOWN_CLASSIFIER, '`convention.components.classifier.'),

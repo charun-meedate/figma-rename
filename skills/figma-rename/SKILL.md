@@ -32,7 +32,34 @@ without ids, one resolved value instead of every mode, and only the tokens that
 happen to be used. Everything downstream needs exactly what they drop. Step 1 of
 the manual has the comparison.
 
-The everyday loop, once a project is set up — one batch, one commit. Every step
+## Before any of that: ask
+
+**The loop below starts after the naming decisions have been made, and they are
+not yours to make.** Skipping this is the single most common way a run goes
+wrong: it produces a plausible rename against a convention nobody chose, and the
+person reviewing it has no basis to say the names are wrong. Do not begin by
+running `plan.mjs`.
+
+Use `AskUserQuestion`, one round at a time, your recommendation first, **in the
+language the user is writing in**:
+
+1. **Where does the standard come from?** Team has one → `extends` their file.
+   No standard → `extends: "starter"`. This decides everything downstream.
+2. **What gets renamed?** Tokens / components / layers / styles, which
+   collection or page first. Smallest real batch first.
+3. **What should the names look like?** — *after the inventory, never before.*
+   Case (`kebab` / `camel` / `pascal` per segment), prefixes to strip,
+   separator, and whether sizes read `sm/md/lg` or `100/200/300`. Show real
+   names from their file next to each option, not invented examples.
+4. **The rows the machine could not decide.** Group them by rule and by
+   confidence so hundreds of rows become a handful of questions.
+5. **Confirm before anything ships.** How many names, how many code files, how
+   to undo.
+
+Step 0 of the manual has the full wording, including what to do when the answer
+is "whatever you think". A run that asked nothing is a run to redo.
+
+The everyday loop, once those are answered — one batch, one commit. Every step
 is gated: nothing ships undecided, and nothing reaches code before Figma.
 
 ```bash

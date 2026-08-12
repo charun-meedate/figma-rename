@@ -408,6 +408,22 @@ async function main() {
   }
 
   const total = map.batches.reduce((n, b) => n + b.renames.length, 0);
+  // A config that inherits a preset and overrides none of the format settings
+  // was never discussed with anyone. The plan below will still look decided —
+  // that is the problem. Reported from a real run: the skill produced 20 names
+  // without ever asking what the names should look like.
+  if (config.extendsFrom && config.ownFormatKeys.length === 0) {
+    const c = config.convention ?? {};
+    console.log(
+      `[plan] NOTE: every naming decision here came from "${config.extendsFrom}" — this project ` +
+        'overrode none of them. If nobody chose these, ask before applying:',
+    );
+    console.log(
+      `[plan]   case per segment: ${c.segmentCase ?? 'kebab'} · separator: ${JSON.stringify(c.separator ?? '/')} · ` +
+        `size scale: ${c.sizeNaming ?? 'semantic'} · rules: ${(c.rules ?? []).length}`,
+    );
+  }
+
   console.log(`[plan] ${scoped.length} inventory entr${scoped.length === 1 ? 'y' : 'ies'} in scope`);
   for (const [status, n] of Object.entries(counts)) {
     if (n) console.log(`[plan]   ${status.padEnd(11)} ${n}`);

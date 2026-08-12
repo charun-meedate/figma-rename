@@ -2034,6 +2034,26 @@ test('a rename that DOES change a code spelling is never called regrouping-only'
   p.cleanup();
 });
 
+test('plan says when every naming decision was inherited, not chosen', () => {
+  // Reported from a real run: the skill renamed 20 components without ever
+  // asking what the names should look like. A config that extends a preset and
+  // overrides nothing is the fingerprint of that run — the output still reads
+  // as decided, which is exactly what makes it hard to catch by eye.
+  const inherited = projectExtending('aurora', {});
+  const bare = run('plan.mjs', [], inherited);
+  assert.equal(bare.ok, true, bare.out);
+  assert.match(bare.out, /came from "aurora"/);
+  assert.match(bare.out, /case per segment/);
+  fs.rmSync(inherited, { recursive: true, force: true });
+
+  // One deliberate format decision is enough to mean someone looked.
+  const chosen = projectExtending('aurora', { convention: { segmentCase: 'kebab' } });
+  const quiet = run('plan.mjs', [], chosen);
+  assert.equal(quiet.ok, true, quiet.out);
+  assert.doesNotMatch(quiet.out, /overrode none of them/);
+  fs.rmSync(chosen, { recursive: true, force: true });
+});
+
 test('check says so when the project is not in git', () => {
   // The rollback story is "one batch, one commit, git revert" — stated in the
   // manual, the README and SKILL.md — and nothing verified the precondition.
