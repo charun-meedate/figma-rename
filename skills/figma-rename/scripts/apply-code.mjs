@@ -144,7 +144,29 @@ async function main() {
     console.log(`[apply-code]   ${String(count).padStart(4)}  ${file}`);
   }
 
-  const silent = [...new Set(tokenPairs.map((p) => p.from))].filter((from) => !perPair.has(from));
+  // A rename that only regroups segments — `font-family/heading` becoming
+  // `font/family/heading` — spells identically in code, because every code
+  // spelling flattens `/` and `-` the same way. `spellingsFor` correctly emits
+  // no pair for it, and without this the run reports "0 occurrences" and leaves
+  // the reader wondering whether the scan is broken. It is not: there is
+  // genuinely nothing on this side to change.
+  const spellingChanging = new Set(
+    tokenPairs.filter((p) => p.spelling !== 'figmaPath').map((p) => p.figmaFrom ?? p.from),
+  );
+  const inert = renames.filter((r) => !spellingChanging.has(r.from));
+  if (inert.length) {
+    console.log(
+      `\n[apply-code] ${inert.length} rename(s) change no code spelling — regrouping only ` +
+        '(Figma path changes, the generated identifier does not):',
+    );
+    for (const r of inert.slice(0, 8)) console.log(`[apply-code]   ${r.from}  ->  ${r.to}`);
+    if (inert.length > 8) console.log(`[apply-code]   … ${inert.length - 8} more`);
+  }
+
+  const silent = [...new Set(tokenPairs.map((p) => p.from))]
+    .filter((from) => !perPair.has(from))
+    // figmaPath spellings for an inert rename are already explained above.
+    .filter((from) => !inert.some((r) => r.from === from));
   if (silent.length) {
     console.log(`\n[apply-code] ${silent.length} spelling(s) matched nothing:`);
     for (const from of silent.slice(0, 15)) console.log(`[apply-code]   ${from}`);

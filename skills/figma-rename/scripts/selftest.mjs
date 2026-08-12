@@ -1979,6 +1979,49 @@ function lifecycleProject() {
   return { dir, readMap, writeInventory, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
+test('a rename that only regroups segments says so instead of reporting zero', () => {
+  // Found on TestDSDS: font-family/heading -> font/family/heading. Every code
+  // spelling flattens "/" and "-" identically, so the identifier does not move
+  // and there is genuinely nothing to rewrite. Reporting a bare "0 occurrences"
+  // reads as a broken scan — I misread it that way myself before tracing it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-inert-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['variable'],
+      convention: { segmentCase: 'kebab', rules: [{ match: 'font-family/**', to: 'font/family/$1' }] },
+      code: { roots: ['.'], include: ['**/*.css'], exclude: [], generated: [] },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({
+      entries: [{ kind: 'variable', id: 'V1', name: 'font-family/heading', scope: 'S', resolvedType: 'STRING' }],
+    }),
+  );
+  fs.writeFileSync(path.join(dir, 'src/a.css'), ':root{font-family:var(--font-family-heading)}\n');
+
+  run('plan.mjs', [], dir);
+  run('review.mjs', ['accept', '--batch', 'variable-s', '--all'], dir);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  const batchId = map.batches[0].id;
+  run('review.mjs', ['accept', '--batch', batchId, '--all'], dir);
+  run('review.mjs', ['mark', batchId, '--figma-applied'], dir);
+
+  const result = run('apply-code.mjs', ['--batch', batchId], dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /regrouping only/);
+  assert.match(result.out, /font-family\/heading {2}-> {2}font\/family\/heading/);
+  // And it must not ALSO be reported as a spelling that matched nothing.
+  assert.doesNotMatch(result.out, /matched nothing/);
+  // The CSS variable keeps its name, so the file is untouched either way.
+  assert.match(fs.readFileSync(path.join(dir, 'src/a.css'), 'utf8'), /--font-family-heading/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('plan marks every new row pending', () => {
   const p = lifecycleProject();
   assert.equal(run('plan.mjs', [], p.dir).ok, true);
