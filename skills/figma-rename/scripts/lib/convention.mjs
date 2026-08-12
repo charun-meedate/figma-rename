@@ -91,6 +91,72 @@ function applyAliases(segment, aliases) {
   return hit === undefined ? segment : hit;
 }
 
+/**
+ * The plain operations, for when a glob rule is more machinery than the job needs.
+ *
+ * Most renames are not a re-architecture — they are "drop the `palette/`
+ * prefix", "we write `/` not `-`", "make it all kebab". Expressing those as
+ * capture-group templates is possible, and nobody enjoys it. `transform` says
+ * them directly, and runs AFTER any matching rule so the two compose.
+ *
+ *   { "stripPrefix": ["palette"], "addPrefix": "primitive",
+ *     "separator": { "from": "-", "to": "/" },
+ *     "replace": [{ "find": "btn", "with": "button" }] }
+ *
+ * The order is fixed and load-bearing: separator first (so prefixes are
+ * matched against the final shape), then strip, then add, then replacements.
+ */
+export function applyTransform(name, transform) {
+  if (!transform) return name;
+  let out = name;
+
+  // A hierarchy separator swap has to happen before anything looks at segments.
+  if (transform.separator?.from) {
+    out = out.split(transform.separator.from).join(transform.separator.to ?? '/');
+  }
+
+  let segments = out.split('/').filter(Boolean);
+  const parts = (value) => String(value).replace(/^\/|\/$/g, '').split('/').filter(Boolean);
+
+  for (const prefix of transform.stripPrefix ?? []) {
+    const wanted = parts(prefix);
+    const matches = wanted.every((p, i) => (segments[i] ?? '').toLowerCase() === p.toLowerCase());
+    // Never strip a name down to nothing — a token called exactly "palette"
+    // has no name left afterwards.
+    if (matches && segments.length > wanted.length) {
+      segments = segments.slice(wanted.length);
+      break; // one strip per pass; stripping twice is almost never intended
+    }
+  }
+
+  for (const suffix of transform.stripSuffix ?? []) {
+    const wanted = parts(suffix);
+    const at = segments.length - wanted.length;
+    const matches = at > 0 && wanted.every((p, i) => (segments[at + i] ?? '').toLowerCase() === p.toLowerCase());
+    if (matches) {
+      segments = segments.slice(0, at);
+      break;
+    }
+  }
+
+  if (transform.addPrefix) {
+    const add = parts(transform.addPrefix);
+    // Adding a prefix that is already there would produce primitive/primitive/…
+    // on the second run, and these configs do get run twice.
+    const already = add.every((p, i) => (segments[i] ?? '').toLowerCase() === p.toLowerCase());
+    if (!already) segments = [...add, ...segments];
+  }
+
+  // Replacements match a WHOLE segment, like aliases — a substring rule turns
+  // "button" into "buttonton" the second time it runs.
+  for (const { find, with: replacement } of transform.replace ?? []) {
+    if (!find || replacement === undefined) continue;
+    segments = segments.map((s) => (s.toLowerCase() === String(find).toLowerCase() ? replacement : s));
+  }
+
+  return segments.join('/');
+}
+
 /** separator + case + aliases. Idempotent: normalize(normalize(x)) === normalize(x). */
 export function normalizeName(name, convention) {
   const { separator = '/', segmentCase = 'kebab', aliases = {} } = convention;
@@ -165,7 +231,9 @@ export function proposeName(name, compiled) {
     break;
   }
 
-  const to = normalizeName(candidate, compiled);
+  const transformed = applyTransform(candidate, compiled.transform);
+  if (!rule && transformed !== candidate) rule = '(transform)';
+  const to = normalizeName(transformed, compiled);
 
   const problem = structureProblem(to, compiled.structure);
   if (problem) {

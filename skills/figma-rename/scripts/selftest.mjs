@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildReplacer, namespaceClassPairs, rewrite, spellingsFor } from './lib/codemod.mjs';
+import { classifyComponent, findNameCollisions, suggestComponentName } from './lib/classify.mjs';
 import { compileConvention, normalizeName, proposeName } from './lib/convention.mjs';
 import {
   SHADE_CHROMATIC,
@@ -539,6 +540,249 @@ test('two variables with one value are reported as duplicates, not suffixed apar
   assert.equal(review.length, 2);
   assert.match(review[0].why, /same value/);
   assert.equal(/-2$|_2$/.test(review[0].suggestion ?? ''), false, 'a numeric suffix would hide the real problem');
+});
+
+// ------------------------------------------------------ component classifier
+
+section('component classifier');
+
+/** A complete, all-falsy signature — override only what the case is about. */
+const sig = (over) => ({
+  width: 0, height: 0, aspectRatio: 1, childCount: 0, directChildCount: 0, totalDescendants: 0,
+  layoutMode: 'NONE', hasAutoLayout: false, cornerRadius: 0, hasFill: false, hasSolidFill: false,
+  hasStroke: false, hasImageFill: false, hasGradientFill: false, textNodes: [], childTypes: [],
+  childNames: [], smallInstances: 0, variantProps: [], ...over,
+});
+
+const BUTTON_FILLED = sig({ width: 120, height: 40, cornerRadius: 8, hasFill: true, hasSolidFill: true, childCount: 1, totalDescendants: 1, textNodes: [{ text: 'Save', fontSize: 14 }] });
+const BUTTON_OUTLINE = sig({ width: 120, height: 40, cornerRadius: 8, hasStroke: true, childCount: 1, totalDescendants: 1, textNodes: [{ text: 'Cancel', fontSize: 14 }] });
+const BADGE = sig({ width: 24, height: 24, cornerRadius: 12, hasFill: true, hasSolidFill: true, childCount: 1, totalDescendants: 1, textNodes: [{ text: '3', fontSize: 11 }] });
+
+test('ordinary component shapes classify as themselves', () => {
+  const cases = [
+    [BUTTON_FILLED, 'Button'],
+    [BUTTON_OUTLINE, 'Button'],
+    [BADGE, 'Badge'],
+    [sig({ width: 280, height: 44, cornerRadius: 4, hasStroke: true, hasInput: true, childCount: 1, totalDescendants: 1, textNodes: [{ text: 'Enter name', fontSize: 14 }] }), 'Text Input'],
+    [sig({ width: 160, height: 32, childCount: 1, totalDescendants: 1, textNodes: [{ text: 'Copy link', fontSize: 12 }] }), 'Tooltip'],
+    [sig({ width: 40, height: 40, cornerRadius: 8, hasIcon: true, childCount: 1, totalDescendants: 1 }), 'Icon Button'],
+    [sig({ width: 400, height: 320, hasClose: true, hasOverlay: true, childCount: 4, totalDescendants: 12, textNodes: [{ text: 'Confirm', fontSize: 20 }, { text: 'Sure?', fontSize: 14 }] }), 'Modal'],
+    [sig({ width: 44, height: 24, cornerRadius: 12, hasFill: true, hasSolidFill: true, childCount: 1, totalDescendants: 1 }), 'Toggle'],
+    [sig({ width: 40, height: 40, cornerRadius: 20, hasFill: true, hasSolidFill: true, childCount: 1, totalDescendants: 1 }), 'Avatar'],
+    [sig({ width: 20, height: 20, cornerRadius: 2, hasStroke: true }), 'Checkbox'],
+    [sig({ width: 20, height: 20, cornerRadius: 10, hasStroke: true }), 'Radio Button'],
+    [sig({ width: 320, height: 1, hasFill: true, hasSolidFill: true }), 'Divider'],
+  ];
+  for (const [signature, want] of cases) {
+    const got = classifyComponent(signature, { pageName: 'Components' });
+    assert.equal(got?.name, want, `expected ${want}, got ${got?.name ?? '(none)'}`);
+  }
+});
+
+test('a loose geometric rule never outranks a specific one', () => {
+  // The three regressions found by porting the plugin's table verbatim. Each
+  // used to win on priority alone, and each read as high confidence.
+  assert.notEqual(classifyComponent(BUTTON_FILLED, {}).name, 'Tooltip');
+  assert.notEqual(classifyComponent(BUTTON_OUTLINE, {}).name, 'Text Input');
+  assert.notEqual(classifyComponent(BADGE, {}).name, 'Radio Button');
+});
+
+test('a catch-all shape is offered at low confidence, never as certain', () => {
+  const container = sig({ width: 300, height: 200, layoutMode: 'VERTICAL', hasAutoLayout: true, childCount: 3, totalDescendants: 8, hasFill: true, hasSolidFill: true });
+  assert.equal(classifyComponent(container, {}).confidence, 'low');
+  assert.notEqual(classifyComponent(BUTTON_FILLED, {}).confidence, 'low');
+});
+
+test('nothing matched means no name, not "Component"', () => {
+  // The plugin answered "Small Element" / "Bar Element" / "Component" here.
+  // Those read as answers in a list of 200, and they are not names.
+  const nothing = sig({ width: 77, height: 55, hasFill: true, hasSolidFill: true, childCount: 2, totalDescendants: 2 });
+  assert.equal(classifyComponent(nothing, { pageName: 'Misc' }), null);
+});
+
+test('the page name is a last resort, and says so', () => {
+  const nothing = sig({ width: 77, height: 55, hasFill: true, hasSolidFill: true, childCount: 2, totalDescendants: 2 });
+  const result = classifyComponent(nothing, { pageName: '❖ Button' });
+  assert.equal(result.name, 'Button');
+  assert.equal(result.confidence, 'low');
+  assert.match(result.reason, /No structural rule matched/);
+});
+
+test('the label is not baked into the name by default', () => {
+  assert.equal(suggestComponentName(BUTTON_FILLED, {}).name, 'Button');
+  assert.equal(suggestComponentName(BUTTON_FILLED, { includeTextHint: true }).name, 'Save Button');
+});
+
+test('runners-up are named, because the winner is a ranking not a fact', () => {
+  assert.match(classifyComponent(BUTTON_FILLED, {}).reason, /also matched/);
+});
+
+test('components landing on one name are reported, not suffixed apart', () => {
+  const collisions = findNameCollisions([
+    { id: '1', currentName: 'btn a', name: 'Button', reason: 'x' },
+    { id: '2', currentName: 'btn b', name: 'Button', reason: 'y' },
+    { id: '3', currentName: 'card', name: 'Card', reason: 'z' },
+  ]);
+  assert.equal(collisions.length, 1);
+  assert.equal(collisions[0].name, 'Button');
+  assert.equal(collisions[0].members.length, 2);
+});
+
+test('a signature built by hand is refused', () => {
+  assert.throws(() => classifyComponent({ width: 10 }, {}), /missing/);
+});
+
+// ------------------------------------------------- shared naming standard
+
+section('shared standard (extends)');
+
+/** A throwaway project whose config extends something. */
+function projectExtending(extendsValue, overrides = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-ext-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({ extends: extendsValue, ...overrides }, null, 2),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({
+      entries: [
+        { kind: 'variable', id: 'A', name: 'color/bg-raised', scope: 'semantic', resolvedType: 'COLOR', value: { r: 1, g: 1, b: 1, a: 1 } },
+        { kind: 'variable', id: 'B', name: 'color/surface/raised', scope: 'semantic', resolvedType: 'COLOR', value: { r: 1, g: 1, b: 1, a: 1 } },
+        { kind: 'variable', id: 'C', name: 'space/md', scope: 'dimen', resolvedType: 'FLOAT', value: 16, scopes: ['GAP'] },
+      ],
+    }),
+  );
+  return dir;
+}
+
+test('a project inherits the standard without restating it', () => {
+  const dir = projectExtending('aurora');
+  const result = run('plan.mjs', ['--dry-run'], dir);
+  assert.equal(result.ok, true, result.out);
+  // The rules live in the preset; the project's config named none of them.
+  assert.match(result.out, /color\/bg-raised {2}-> {2}color\/surface\/raised/);
+  assert.match(result.out, /space\/md {2}-> {2}spacing\/md/);
+  // And what the standard already calls correct stays untouched.
+  assert.match(result.out, /conforming {2}1/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the project wins where it overrides, the standard holds everywhere else', () => {
+  const dir = projectExtending('aurora', { code: { cssPrefix: 'ds-', flutterPrefix: 'Rz' } });
+  const result = run('plan.mjs', ['--print-config'], dir);
+  assert.equal(result.ok, true, result.out);
+  const printed = JSON.parse(result.out.slice(result.out.indexOf('{')));
+  assert.equal(printed.code.cssPrefix, 'ds-', 'the project override must win');
+  assert.equal(printed.code.flutterPrefix, 'Rz');
+  assert.equal(printed.convention.segmentCase, 'kebab', 'and the standard must still apply');
+  assert.match(result.out, /extends: aurora/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('an array override replaces rather than appends', () => {
+  // "these, not those" — appending would silently keep rules the project was
+  // trying to drop, and it would look like the standard misbehaving.
+  const dir = projectExtending('aurora', { convention: { conforming: ['space/**'] } });
+  const result = run('plan.mjs', ['--print-config'], dir);
+  const printed = JSON.parse(result.out.slice(result.out.indexOf('{')));
+  assert.deepEqual(printed.convention.conforming, ['space/**']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a team file works as the standard, not just a shipped preset', () => {
+  const dir = projectExtending('./shared-naming.json');
+  fs.writeFileSync(
+    path.join(dir, 'shared-naming.json'),
+    JSON.stringify({ convention: { segmentCase: 'snake', rules: [{ match: 'space/**', to: 'gap/$1' }] } }),
+  );
+  const result = run('plan.mjs', ['--dry-run'], dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /space\/md {2}-> {2}gap\/md/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a missing standard names the presets that do exist', () => {
+  const dir = projectExtending('nope');
+  const result = run('plan.mjs', ['--dry-run'], dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /could not find "nope"/);
+  assert.match(result.out, /Presets in this skill: .*aurora/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the shipped presets are valid on their own', () => {
+  const presetsDir = path.resolve(HERE, '../presets');
+  const presets = fs.readdirSync(presetsDir).filter((f) => f.endsWith('.json'));
+  assert.ok(presets.length >= 1, 'the skill must ship at least one standard');
+  for (const file of presets) {
+    const parsed = JSON.parse(fs.readFileSync(path.join(presetsDir, file), 'utf8'));
+    assert.ok(parsed.convention, `${file} has no convention block`);
+    // A preset whose own rules cannot compile fails every project that extends it.
+    compileConvention(parsed.convention);
+  }
+});
+
+test('a preset never marks as conforming something its own rules want to fix', () => {
+  // conforming is checked BEFORE rules, so `color/**` in conforming would
+  // shadow a `color/bg-*` rule and nothing would ever be renamed.
+  const presetsDir = path.resolve(HERE, '../presets');
+  for (const file of fs.readdirSync(presetsDir).filter((f) => f.endsWith('.json'))) {
+    const parsed = JSON.parse(fs.readFileSync(path.join(presetsDir, file), 'utf8'));
+    const compiled = compileConvention(parsed.convention);
+    for (const rule of parsed.convention.rules ?? []) {
+      const sample = rule.match.replace(/\*\*/g, 'x/y').replace(/\*/g, 'x');
+      const result = proposeName(sample, compiled);
+      assert.notEqual(
+        result.status,
+        'conforming',
+        `${file}: "${rule.match}" can never fire — conforming already claims "${sample}"`,
+      );
+    }
+  }
+});
+
+// ---------------------------------------------------------------- transform
+
+section('transform');
+
+test('prefix, separator and case run without writing a single glob rule', () => {
+  const c = compileConvention({
+    segmentCase: 'kebab',
+    transform: {
+      separator: { from: '-', to: '/' },
+      stripPrefix: ['palette'],
+      addPrefix: 'primitive',
+      replace: [{ find: 'btn', with: 'button' }],
+    },
+  });
+  assert.equal(proposeName('palette/red/500', c).to, 'primitive/red/500');
+  assert.equal(proposeName('palette/btn/bg', c).to, 'primitive/button/bg');
+  assert.equal(proposeName('color-text-primary', c).to, 'primitive/color/text/primary');
+});
+
+test('transform is idempotent — a prefix is not added twice', () => {
+  const c = compileConvention({ segmentCase: 'kebab', transform: { addPrefix: 'primitive' } });
+  const once = proposeName('red/500', c).to;
+  assert.equal(once, 'primitive/red/500');
+  assert.equal(proposeName(once, c).to, null, 'running it again must be a no-op');
+});
+
+test('a strip never leaves a name with nothing in it', () => {
+  const c = compileConvention({ segmentCase: 'kebab', transform: { stripPrefix: ['palette'] } });
+  assert.equal(proposeName('palette', c).to, null, '"palette" alone has no name left after stripping');
+  assert.equal(proposeName('palette/red', c).to, 'red');
+});
+
+test('a rule still outranks the transform', () => {
+  const c = compileConvention({
+    segmentCase: 'kebab',
+    rules: [{ match: 'palette/brand-*', to: 'brand/$1' }],
+    transform: { stripPrefix: ['palette'], addPrefix: 'primitive' },
+  });
+  // The rule fires first, then the transform runs on its output.
+  assert.equal(proposeName('palette/brand-primary', c).to, 'primitive/brand/primary');
 });
 
 // -------------------------------------------------------------------- naming

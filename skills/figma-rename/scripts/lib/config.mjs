@@ -5,10 +5,13 @@
 // subfolder, or from CI — without a cwd convention people will get wrong.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { CASE_STYLES } from './convention.mjs';
 
 const CONFIG_NAME = 'rename.config.json';
+
+const PRESETS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../presets');
 
 const VALID_KINDS = new Set(['variable', 'component', 'componentSet', 'layer', 'textStyle', 'effectStyle', 'paintStyle']);
 
@@ -49,6 +52,78 @@ export async function findConfigPath(startDir = process.cwd()) {
   }
 }
 
+/**
+ * Where a shared naming standard lives.
+ *
+ * A convention copy-pasted into every project is not a standard — it is several
+ * standards that happen to agree today, until the first project edits its copy.
+ * `extends` points every project at one file instead:
+ *
+ *   "extends": "aurora"                          a preset shipped with this skill
+ *   "extends": "../design-system/naming.json"    a file the team owns
+ *
+ * The project keeps only what it genuinely differs on — usually just
+ * `figma.fileKey` and `code.*`, which are per-repo facts, not naming decisions.
+ */
+async function resolveExtends(value, rootDir, seen = []) {
+  const looksLikePath = value.includes('/') || value.endsWith('.json');
+  const target = looksLikePath ? path.resolve(rootDir, value) : path.join(PRESETS_DIR, `${value}.json`);
+
+  if (seen.includes(target)) {
+    throw new Error(`Circular \`extends\`: ${[...seen, target].join(' -> ')}`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(await fs.readFile(target, 'utf8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      let available = [];
+      try {
+        available = (await fs.readdir(PRESETS_DIR))
+          .filter((f) => f.endsWith('.json'))
+          .map((f) => f.replace(/\.json$/, ''));
+      } catch {
+        /* a skill copy may ship without presets */
+      }
+      throw new Error(
+        `\`extends\` could not find "${value}" (looked for ${target}).` +
+          (available.length ? `\nPresets in this skill: ${available.join(', ')}` : '') +
+          "\nUse a preset name, or a relative path to your team's shared naming file.",
+      );
+    }
+    throw new Error(`Could not parse ${target}: ${err.message}`);
+  }
+
+  if (parsed.extends) {
+    const base = await resolveExtends(parsed.extends, path.dirname(target), [...seen, target]);
+    return mergeConfig(base, parsed);
+  }
+  return parsed;
+}
+
+/**
+ * Child wins, one level deep on the objects that matter.
+ *
+ * Arrays are REPLACED, never concatenated. A project overriding `conforming`
+ * means "these, not those"; appending would silently keep rules it was trying
+ * to drop, and the result would look like the shared standard misbehaving
+ * rather than the merge.
+ */
+function mergeConfig(base, child) {
+  const merged = { ...base, ...child };
+  for (const key of ['figma', 'convention', 'code']) {
+    if (base[key] && child[key]) merged[key] = { ...base[key], ...child[key] };
+  }
+  for (const key of ['structure', 'transform']) {
+    if (base.convention?.[key] && child.convention?.[key]) {
+      merged.convention[key] = { ...base.convention[key], ...child.convention[key] };
+    }
+  }
+  delete merged.extends;
+  return merged;
+}
+
 export async function loadConfig(explicitPath) {
   const configPath = explicitPath ? path.resolve(explicitPath) : await findConfigPath();
   const rootDir = path.dirname(configPath);
@@ -60,7 +135,13 @@ export async function loadConfig(explicitPath) {
     throw new Error(`Could not parse ${configPath}: ${err.message}`);
   }
 
-  const config = { ...DEFAULTS, ...parsed };
+  let extendsFrom = null;
+  if (parsed.extends) {
+    extendsFrom = parsed.extends;
+    parsed = mergeConfig(await resolveExtends(parsed.extends, rootDir), parsed);
+  }
+
+  const config = { ...DEFAULTS, ...parsed, extendsFrom };
   config.code = { ...CODE_DEFAULTS, ...(parsed.code ?? {}) };
   config.convention = config.convention ?? {};
 

@@ -77,12 +77,8 @@ node "$S/check.mjs" --after   # ต้องไม่เหลือชื่อ
 
 ```json
 {
+  "extends": "aurora",
   "figma": { "fileKey": "SjE7hLqGcKYLy4XMgXGhlM" },
-  "convention": {
-    "segmentCase": "kebab",
-    "rules": [{ "match": "color/text-*", "to": "text/$1/default" }],
-    "conforming": ["spacing/**", "radius/**"]
-  },
   "code": {
     "generated": ["src/tokens/**"],
     "cssPrefix": "",
@@ -90,6 +86,14 @@ node "$S/check.mjs" --after   # ต้องไม่เหลือชื่อ
   }
 }
 ```
+
+**`extends` คือหัวใจของการใช้หลายโปรเจกต์** — convention อยู่ในไฟล์กลางไฟล์เดียว
+(preset ที่มากับ skill หรือไฟล์ของทีมเอง) โปรเจกต์ override เฉพาะสิ่งที่ต่างจริง
+ซึ่งปกติมีแค่ `figma.fileKey` กับ `code.*` ดูผลลัพธ์หลัง merge ด้วย
+`node "$S/plan.mjs" --print-config`
+
+convention ที่ copy ไปไว้ในแต่ละโปรเจกต์ ไม่ใช่มาตรฐาน — มันคือมาตรฐานหลายชุดที่บังเอิญ
+ตรงกันอยู่วันนี้
 
 **`cssPrefix` และ `flutterPrefix` ต้องตรงกับ `tokens.config.json`** ของ
 `figma-token-export` ไม่งั้น codemod จะหาไม่เจอสักที่แล้วเงียบ ๆ ไม่ทำอะไร
@@ -139,8 +143,8 @@ node "$S/check.mjs" --after   # ต้องไม่เหลือชื่อ
   validate ทุก id ก่อน mutate ตัวแรก
 - **codemod แตะได้เฉพาะข้อความตรง ๆ** ชื่อที่ประกอบขึ้นตอน runtime
   (`'--' + kind + '-' + variant`) หาไม่เจอ ต้อง grep เศษชื่อเอาเองหลัง batch
-- **ยังไม่เคยยิงกับไฟล์ Figma production จริง** ฝั่ง Figma ทดสอบถึงระดับ
-  "สคริปต์ที่ generate ออกมาถูกและ parse ได้ทุกสาขา"
+- **ทดสอบกับไฟล์ Figma จริงแล้ว** อ่าน 1,148 variable, rename 1 ตัว แล้ว reverse กลับ
+  ตอน rename มี semantic token อ้างอยู่ 14 ตัว ไม่พังสักตัว — ยืนยันว่า Figma ผูกด้วย id จริง
 
 ---
 
@@ -149,7 +153,7 @@ node "$S/check.mjs" --after   # ต้องไม่เหลือชื่อ
 มีสองอย่างที่ต้องผ่าน และเป็นคนละเรื่องกัน:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 64 เคส — สคริปต์ยังถูก
+node skills/figma-rename/scripts/selftest.mjs     # 84 เคส — สคริปต์ยังถูก
 ```
 
 กับ **eval** ใน `skills/figma-rename/evals/` ซึ่งทดสอบว่า *agent เดินกระบวนการถูก* —
@@ -160,8 +164,9 @@ regenerate ก่อน codemod ไหม ผ่าน selftest ไม่ได�
 จุดที่ต้องระวังเป็นพิเศษ:
 
 **`lib/naming.mjs` ห้ามเพี้ยนจากของ `figma-token-export`** — codemod ต้องสะกด
-identifier ให้ตรงกับที่ generator เขียนออกมาเป๊ะ ๆ selftest เช็คทีละฟังก์ชันว่า
-เหมือนกันทุกตัวอักษร (ข้ามให้เองถ้าไม่มี export skill วางข้าง ๆ) **แก้ที่หนึ่งต้องแก้อีกที่**
+identifier ให้ตรงกับที่ generator เขียนออกมาเป๊ะ ๆ `naming.lock.json` ล็อก hash ของทุกฟังก์ชันไว้
+selftest เลยจับได้แม้อีก repo จะไม่ได้อยู่บนเครื่องเดียวกัน แก้แล้วต้อง `--relock`
+**แล้วไปแก้ figma-token-export ให้ตรงกันด้วย**
 
 **เพิ่มการสะกดใหม่ในโค้ด** (เช่น Kotlin, Swift) — แก้ `lib/codemod.mjs`
 ฟังก์ชัน `spellingsFor` + เพิ่ม guard ใน `GUARDS` แล้วเพิ่มชื่อใน

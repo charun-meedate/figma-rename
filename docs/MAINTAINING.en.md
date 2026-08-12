@@ -78,12 +78,8 @@ do it). Logs go to stderr, so the output pipes cleanly.
 
 ```json
 {
+  "extends": "aurora",
   "figma": { "fileKey": "SjE7hLqGcKYLy4XMgXGhlM" },
-  "convention": {
-    "segmentCase": "kebab",
-    "rules": [{ "match": "color/text-*", "to": "text/$1/default" }],
-    "conforming": ["spacing/**", "radius/**"]
-  },
   "code": {
     "generated": ["src/tokens/**"],
     "cssPrefix": "",
@@ -91,6 +87,14 @@ do it). Logs go to stderr, so the output pipes cleanly.
   }
 }
 ```
+
+**`extends` is what makes this work across projects.** The convention lives in
+one file — a preset shipped with the skill, or the team's own — and each project
+overrides only what it genuinely differs on, normally just `figma.fileKey` and
+`code.*`. See the merged result with `node "$S/plan.mjs" --print-config`.
+
+A convention copy-pasted into every project is not a standard; it is several
+standards that happen to agree today.
 
 **`cssPrefix` and `flutterPrefix` must match `tokens.config.json`** from
 `figma-token-export`. If they do not, the codemod matches nothing and silently
@@ -146,9 +150,10 @@ because "clean consumers but a stale `tokens.css`" means someone skipped step 2.
 - **The codemod only reaches literal text.** Names assembled at runtime
   (`'--' + kind + '-' + variant`) are invisible to it; grep for the fragments
   after a batch.
-- **Never run against a real production Figma file yet.** The Figma side is
-  tested to the level of "the generated script is correct and parses on every
-  branch".
+- **Verified against a real Figma file.** 1,148 variables read, one renamed,
+  then reversed. Fourteen semantic tokens still pointed at the renamed variable
+  afterwards — which is the claim this whole skill rests on, measured rather
+  than assumed.
 
 ---
 
@@ -157,7 +162,7 @@ because "clean consumers but a stale `tokens.css`" means someone skipped step 2.
 Two things have to pass, and they check different things:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 64 cases — the scripts are right
+node skills/figma-rename/scripts/selftest.mjs     # 84 cases — the scripts are right
 ```
 
 and the **evals** in `skills/figma-rename/evals/`, which check that the *agent
@@ -170,8 +175,9 @@ Things to be careful about:
 
 **`lib/naming.mjs` must not drift from `figma-token-export`'s copy** — the
 codemod has to spell identifiers exactly the way the generator writes them. The
-selftest compares the shared functions byte for byte (and skips itself if the
-export skill is not checked out alongside). **Change one, change the other.**
+`naming.lock.json` pins a hash of every shared function, so the selftest catches
+drift even with the other repo nowhere on the machine. Re-lock deliberately with
+`--relock`, **then make the same change in figma-token-export.**
 
 **Adding a new code spelling** (Kotlin, Swift, …) — edit `spellingsFor` in
 `lib/codemod.mjs`, add a guard to `GUARDS`, and register the name in

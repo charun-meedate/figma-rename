@@ -54,6 +54,7 @@ skills/figma-rename/         ตัว skill
 ├── SKILL.md                 ไฟล์ที่ Claude Code โหลด
 ├── figma-rename.md          คู่มือฉบับเต็ม
 ├── references/              รายละเอียดแยกหัวข้อ โหลดเมื่อจำเป็น
+├── presets/                 มาตรฐานกลาง — ใช้ร่วมกันหลายโปรเจกต์
 ├── evals/                   ชุดทดสอบพฤติกรรม 4 อัน
 └── scripts/                 โค้ดจริง ไม่มี dependency (Node 18+)
 ```
@@ -65,7 +66,7 @@ node skills/figma-rename/scripts/selftest.mjs
 ```
 
 รันสคริปต์จริงบนโปรเจกต์ชั่วคราวในโฟลเดอร์ temp ไม่แตะโปรเจกต์ไหน
-ต้องขึ้น `64 passed, 0 failed`
+ต้องขึ้น `84 passed, 0 failed`
 
 สถานะการทดสอบทั้งหมดบันทึกไว้ที่เดียว ใน
 [docs/REFERENCE.md → สถานะการทดสอบ](docs/REFERENCE.md#สถานะการทดสอบ)

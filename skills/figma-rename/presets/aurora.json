@@ -1,0 +1,82 @@
+{
+  "$comment": "Aurora — the 7Solutions naming standard. Point a project at this with { \"extends\": \"aurora\" } and override only what that project genuinely differs on (normally just figma.fileKey and code.*). Edit THIS file to change the standard; editing a project's copy makes a second standard.",
+
+  "convention": {
+    "separator": "/",
+    "segmentCase": "kebab",
+
+    "$comment_aliases": "Short forms that show up in older files, mapped to the words the standard uses. Matched on a whole segment.",
+    "aliases": {
+      "bg": "surface",
+      "background": "surface",
+      "fg": "content",
+      "foreground": "content",
+      "text": "content",
+      "txt": "content",
+      "clr": "color",
+      "btn": "button",
+      "pri": "primary",
+      "sec": "secondary",
+      "err": "error",
+      "bd": "border"
+    },
+
+    "$comment_conforming": "Already correct — reported as conforming and never proposed. This is what makes a run on a healthy file come back almost empty. NOTE: conforming is checked BEFORE rules, so list the exact groups that are right, not the whole namespace — `color/**` here would shadow the `color/bg-*` rule below and nothing would ever be fixed.",
+    "conforming": [
+      "palette/**",
+      "color/surface/**",
+      "color/content/**",
+      "color/border/**",
+      "color/icon/**",
+      "color/shadow/**",
+      "spacing/**",
+      "radius/**",
+      "size/**",
+      "border-width/**",
+      "typography/**",
+      "shadow/**",
+      "font/**"
+    ],
+
+    "$comment_ignore": "Out of scope for a rename pass entirely.",
+    "ignore": ["_wip/**", "deprecated/**", "z-old/**"],
+
+    "$comment_rules": "Older shapes seen in real files, mapped onto the standard. First match wins, so these run most-specific first.",
+    "rules": [
+      { "match": "color/text-*", "to": "color/content/$1" },
+      { "match": "color/bg-*", "to": "color/surface/$1" },
+      { "match": "color/border-*", "to": "color/border/$1" },
+      { "match": "colors/**", "to": "palette/$1" },
+      { "match": "space/**", "to": "spacing/$1" },
+      { "match": "corner/**", "to": "radius/$1" }
+    ],
+
+    "$comment_structure": "What the standard requires. A proposal that breaks this comes back as needsReview with to:null instead of a guess.",
+    "structure": {
+      "minSegments": 2,
+      "maxSegments": 5,
+      "categories": [
+        "palette",
+        "color",
+        "spacing",
+        "radius",
+        "size",
+        "border-width",
+        "typography",
+        "shadow",
+        "font"
+      ]
+    },
+
+    "$comment_sizes": "spacing/md rather than spacing/4. Switch to \"numeric\" if the team spells its scale that way.",
+    "sizeNaming": "semantic",
+    "colorGroup": "palette"
+  },
+
+  "code": {
+    "$comment": "Defaults only — a project overrides roots/include/generated, and MUST set cssPrefix and flutterPrefix to match its own tokens.config.json.",
+    "spellings": ["figmaPath", "cssVar", "camel", "camelMember", "pascal"],
+    "cssPrefix": "",
+    "flutterPrefix": "App"
+  }
+}

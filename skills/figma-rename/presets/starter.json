@@ -1,0 +1,37 @@
+{
+  "$comment": "A neutral starting point for a team that has not written its convention down yet. Copy it to your own file, edit it there, and have every project extend that — do not edit this one, it ships with the skill and updates will overwrite it.",
+
+  "convention": {
+    "separator": "/",
+    "segmentCase": "kebab",
+
+    "aliases": {
+      "bg": "surface",
+      "fg": "text",
+      "txt": "text",
+      "btn": "button"
+    },
+
+    "$comment_conforming": "Add the groups your file already gets right. Every entry here is work the rename pass does not have to do.",
+    "conforming": [],
+
+    "ignore": ["_wip/**", "deprecated/**"],
+
+    "$comment_rules": "Empty on purpose. Add a rule only when a transform cannot say it — see convention.transform first.",
+    "rules": [],
+
+    "$comment_structure": "Loose to start with. Tighten `categories` once the top-level groups are settled; that is what turns unnameable tokens into needsReview instead of a guess.",
+    "structure": {
+      "minSegments": 2
+    },
+
+    "sizeNaming": "semantic",
+    "colorGroup": "colors"
+  },
+
+  "code": {
+    "spellings": ["figmaPath", "cssVar", "camel", "camelMember", "pascal"],
+    "cssPrefix": "",
+    "flutterPrefix": "App"
+  }
+}

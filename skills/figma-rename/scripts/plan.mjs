@@ -39,6 +39,16 @@ function slug(text) {
 async function main() {
   const args = parseArgs();
   const config = await loadConfig(args.config);
+  // The merged view. Anyone who has to ask "is my override actually winning?"
+  // has already lost an afternoon to a shared config; this answers it in one
+  // command, and names which file the base came from.
+  if (args['print-config']) {
+    console.log(`[config] ${config.configPath}`);
+    console.log(`[config] extends: ${config.extendsFrom ?? '(nothing — this project stands alone)'}`);
+    console.log(JSON.stringify({ kinds: config.kinds, convention: config.convention, code: config.code }, null, 2));
+    return;
+  }
+
   const inventory = await loadInventory(config.inventoryPath);
   const convention = compileConvention(config.convention);
 

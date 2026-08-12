@@ -69,31 +69,108 @@ Everything the scripts read or write — `rename.config.json`, `inventory.json`,
 `rename-map.json`, the codebase — lives in the **project**, resolved relative to
 `rename.config.json`. Only the code lives in the skill.
 
-## Step 0 — agree the scope and the convention before touching anything
+## Step 0 — ask, at every point where there is a choice
 
-Two questions decide the whole run, and both are the user's to answer. Ask with
-`AskUserQuestion` rather than assuming.
+This skill exists so that several projects end up agreeing on one set of names.
+That only works if the person running it understands what they are agreeing to,
+and most of them will not have read any of this. **Ask rather than assume, ask
+in plain language, and always say what you would pick and why.** A user who
+answers "whatever you think" has at least been told what they are getting.
 
-**Which kinds are in scope?** (multi-select) — Figma variables, components and
-component sets, layers inside components, text/effect styles. They have
-different blast radii: a variable rename reaches every line of token-consuming
-code; a layer rename inside a component reaches almost nothing (and matters
-mostly for design-to-code output). Doing them in one pass makes the diff
-unreadable, so scope narrowly and repeat.
+Use `AskUserQuestion`, one round at a time, recommendation first and marked
+`(recommended)`. Never ask an abstract question when you could ask it with the
+user's own names in front of them.
 
-**What is the target convention?** The convention has to be written down
-*before* the first rename, because it is what makes the result reviewable — the
-question at review time is "does this match the rule", not "do I like this
-name". `references/naming-convention.md` covers the segment model
-(system · component · category · concept · property · variant · scale) and how
-to express it as rules in the config.
+### Round 1 — is there already a standard?
 
-If the team already has a convention — an MD file, a Confluence page, an
-existing well-named collection — read it and encode that. Do not invent a
-second one.
+**"Does your team already have a naming standard, or is this the first time?"**
 
-Then copy `$S/rename.config.example.json` to the project root as
-`rename.config.json` and fill it in. Every path resolves relative to that file.
+This decides everything downstream, because it decides whether the project gets
+its own convention or inherits the shared one.
+
+| answer | what to do |
+|---|---|
+| there is a shared standard | `"extends": "aurora"`, or a path to the team's file |
+| there is a document, not a config | encode it once as a preset or shared file, then extend that |
+| there is nothing yet | `"extends": "starter"`, and tighten it as answers arrive |
+
+Say the consequence in one line: **a convention that lives inside one project
+is a convention that will disagree with the next project.** Encoding a document
+into the project's own config is how a standard quietly becomes two.
+
+The project should then override almost nothing — normally just
+`figma.fileKey` and `code.*`, which are facts about the repo rather than naming
+decisions. `node "$S/plan.mjs" --print-config` shows the merged result and
+which file the base came from.
+
+### Round 2 — what is in scope
+
+**"What should I rename this time?"** (multi-select) — variables/tokens,
+components and component sets, layers inside a component, text/effect styles.
+
+Say what each costs, because the blast radii are nothing alike: a variable
+rename reaches every line of token-consuming code; a layer rename inside a
+component reaches almost nothing. Recommend one kind and the smallest
+collection for a first run.
+
+**"Everything, or one collection?"** Recommend one. A thousand-variable file is
+not reviewable in a single pass, and one batch is one commit is one rollback.
+
+### Round 3 — the format, shown with their own names
+
+Do this **after** the inventory, never before. By then the options can be shown
+as what they actually produce:
+
+```
+now                        kebab                    camel
+color/bg-raised         →  color/surface/raised     colorSurfaceRaised
+palette/red/500         →  palette/red/500          paletteRed500
+```
+
+Ask only about what this file actually needs — never offer a menu of options
+the file has no examples of:
+
+- **case per segment** — kebab, camel, Pascal, snake
+- **prefix** — anything to strip (`palette/`), anything to add (`primitive/`)
+- **separator** — only if the file mixes `-` and `/` for hierarchy
+- **number scale** — `spacing/md` or `spacing/4`, only if the file has one
+
+All four are `convention.transform`; none of them needs a glob rule. If an
+answer differs from the shared standard, say so out loud — it is either a
+project exception worth writing down, or a change the standard should absorb.
+
+### Round 4 — how much guessing is allowed
+
+Once the plan exists, show the counts and ask **"how confident do the
+suggestions need to be?"** with one real `low` row, so the question is concrete:
+
+```
+Variable 3 -> opacity/50  [low]  value 0.5 is in the 0–1 range
+```
+
+Recommend `--min-confidence medium` for a first run.
+
+### Round 5 — before applying
+
+**"Start with this batch?"** Name the batch, its size, and what will happen:
+Figma, then regenerate, then code, then one commit. Confirm the project is on a
+branch with a clean tree.
+
+### Say where the run is going
+
+Renaming is not the point. **Matching the standard so the exported code is
+predictable is the point** — and saying that is what makes the questions above
+feel worth answering:
+
+```
+figma-rename        names match the shared standard
+      ↓
+figma-token-export  those names become --color-surface-raised / AppColors.surfaceRaised
+```
+
+Which is also why `cssPrefix` and `flutterPrefix` in `code.*` must match that
+project's `tokens.config.json`. If they do not, the codemod matches nothing and
+silently does no work. Check it while asking, not afterwards.
 
 ## Step 1 — inventory: what is actually in the file
 
