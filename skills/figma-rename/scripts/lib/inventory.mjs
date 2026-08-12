@@ -55,6 +55,20 @@ export async function loadInventory(inventoryPath) {
     if (typeof entry.id !== 'string' || !entry.id) errors.push(`entries[${i}] is missing \`id\`.`);
     if (typeof entry.name !== 'string' || !entry.name) errors.push(`entries[${i}] (${entry.id}) is missing \`name\`.`);
     if (entry.id && byId.has(entry.id)) errors.push(`entries[${i}]: duplicate id "${entry.id}".`);
+    // A signature is what lets the classifier say anything about a component.
+    // Checked shallowly here so a hand-written one fails at load rather than
+    // deep inside a rule that reads `s.textNodes.length`.
+    if (entry.signature !== undefined) {
+      const sig = entry.signature;
+      if (typeof sig !== 'object' || Array.isArray(sig)) {
+        errors.push(`entries[${i}] (${entry.name}): signature must be an object — capture it with the script in references/inventory.md.`);
+      } else if (!Array.isArray(sig.textNodes) || typeof sig.width !== 'number') {
+        errors.push(
+          `entries[${i}] (${entry.name}): signature is missing width/textNodes. ` +
+            'Use the capture script in references/inventory.md rather than writing it by hand.',
+        );
+      }
+    }
     if (entry.id) byId.set(entry.id, entry);
   });
 
@@ -65,6 +79,9 @@ export async function loadInventory(inventoryPath) {
   return {
     fileKey: parsed.fileKey ?? null,
     capturedAt: parsed.capturedAt ?? null,
+    // Set when the capture was scoped to one node ("Copy link to selection").
+    // Recorded so a later reader knows the inventory is a slice, not the file.
+    scopeNodeId: parsed.scopeNodeId ?? null,
     entries,
     byId,
     /** Every name currently taken in the same uniqueness bucket as `entry`. */

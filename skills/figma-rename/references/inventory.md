@@ -165,6 +165,196 @@ That filter matters. Without it the inventory fills with entries called
 and applying the result destroys the variant axes of every component set in the
 file.
 
+## The component signature — what lets a shape suggest a name
+
+A component name cannot be derived from a value, but it can be argued from the
+component's **shape**: a 40px-tall rounded box with one solid fill and exactly
+one text node is a Button; a 320-wide box with an overlay and a close control is
+a Modal. `lib/classify.mjs` makes that argument from a `signature` object, and
+this is the script that captures one.
+
+Without a signature, a component gets spelling normalisation only — `plan.mjs`
+says so explicitly rather than leaving you to wonder why nothing was suggested.
+
+Add this to the per-page component script above; it walks each component once
+and attaches the result as `signature`.
+
+```js
+const page = await figma.getNodeByIdAsync("PAGE_ID");
+await figma.setCurrentPageAsync(page);
+
+const CHILD_SIGNALS = [
+  ["hasIcon",         /icon|ico$|^i$/],
+  ["hasImage",        /image|photo|thumbnail|img|cover|hero|banner/],
+  ["hasAvatar",       /avatar|profile|user-pic|photo-circle/],
+  ["hasInput",        /input|field|textfield|textarea|search/],
+  ["hasAction",       /button|btn|cta|action|submit/],
+  ["hasDivider",      /divider|separator|^hr$/],
+  ["hasToggle",       /toggle|switch/],
+  ["hasCheckbox",     /check|tick/],
+  ["hasRadio",        /radio|dot-select/],
+  ["hasDropdown",     /dropdown|select|picker|combobox/],
+  ["hasSlider",       /slider|range|track/],
+  ["hasProgressBar",  /progress|loading|spinner/],
+  ["hasClose",        /close|dismiss|x-btn|^x$/],
+  ["hasStar",         /star|rating|favorite/],
+  ["hasArrow",        /arrow|chevron|caret|back|next/],
+  ["hasSearch",       /search|magnify|find/],
+  ["hasNotification", /notification|alert|bell|badge|dot/],
+  ["hasOverlay",      /overlay|backdrop|modal|sheet/],
+];
+
+function collectSignals(node, depth, out) {
+  if (!("children" in node) || depth <= 0) return out;
+  for (const child of node.children) {
+    out.childTypes.push(child.type);
+    out.childNames.push(child.name);
+    const name = child.name.toLowerCase();
+    for (const [flag, re] of CHILD_SIGNALS) if (re.test(name)) out[flag] = true;
+    // A small instance is an icon whatever it is called.
+    if (child.type === "INSTANCE" && "width" in child && child.width <= 28 && child.height <= 28) {
+      out.hasIcon = true;
+      out.smallInstances++;
+    }
+    if (child.type === "LINE") out.hasDivider = true;
+    if (child.type === "ELLIPSE" && "width" in child && child.width === child.height && child.width >= 24 && child.width <= 64) {
+      out.hasAvatar = true;
+    }
+    if ((child.type === "RECTANGLE" || child.type === "ELLIPSE") && "fills" in child) {
+      const fills = child.fills;
+      if (Array.isArray(fills) && fills.some((f) => f.type === "IMAGE")) out.hasImage = true;
+    }
+    collectSignals(child, depth - 1, out);
+  }
+  return out;
+}
+
+function collectText(node, depth, out = []) {
+  if (depth <= 0 || out.length >= 8) return out;
+  if (node.type === "TEXT") {
+    const text = node.characters.trim();
+    if (text.length && text.length <= 50) {
+      const font = node.fontName;
+      out.push({
+        text,
+        fontSize: typeof node.fontSize === "number" ? node.fontSize : 14,
+        isBold: typeof font === "object" && /bold|semi|medium|black|heavy/i.test(font.style ?? ""),
+      });
+    }
+    return out;
+  }
+  if ("children" in node) for (const child of node.children) collectText(child, depth - 1, out);
+  return out;
+}
+
+function countDescendants(node, depth) {
+  if (depth <= 0 || !("children" in node)) return 0;
+  let n = 0;
+  for (const child of node.children) n += 1 + countDescendants(child, depth - 1);
+  return n;
+}
+
+function buildSignature(node, pageName) {
+  const fills = "fills" in node && Array.isArray(node.fills) ? node.fills.filter((f) => f.visible !== false) : [];
+  const strokes = "strokes" in node && Array.isArray(node.strokes) ? node.strokes.filter((s) => s.visible !== false) : [];
+  const radius = "cornerRadius" in node && typeof node.cornerRadius === "number" ? node.cornerRadius : 0;
+  // A COMPONENT_SET reads its variant properties off its first child.
+  const variantSource = node.type === "COMPONENT_SET" ? node.children[0] : node;
+  const variantProps = variantSource?.variantProperties ? Object.keys(variantSource.variantProperties) : [];
+
+  const signals = collectSignals(node, 3, {
+    childTypes: [], childNames: [], smallInstances: 0,
+    ...Object.fromEntries(CHILD_SIGNALS.map(([flag]) => [flag, false])),
+  });
+
+  return {
+    width: "width" in node ? node.width : 0,
+    height: "height" in node ? node.height : 0,
+    aspectRatio: "height" in node && node.height > 0 ? node.width / node.height : 1,
+    childCount: "children" in node ? node.children.length : 0,
+    directChildCount: "children" in node ? node.children.length : 0,
+    totalDescendants: countDescendants(node, 4),
+    layoutMode: "layoutMode" in node ? String(node.layoutMode) : "NONE",
+    hasAutoLayout: "layoutMode" in node && node.layoutMode !== "NONE",
+    cornerRadius: radius,
+    hasFill: fills.length > 0,
+    hasSolidFill: fills.some((f) => f.type === "SOLID"),
+    hasGradientFill: fills.some((f) => String(f.type).startsWith("GRADIENT")),
+    hasImageFill: fills.some((f) => f.type === "IMAGE"),
+    hasStroke: strokes.length > 0,
+    textNodes: collectText(node, 3),
+    variantProps,
+    pageContext: pageName,
+    ...signals,
+  };
+}
+
+const nodes = page.findAllWithCriteria({ types: ["COMPONENT", "COMPONENT_SET"] })
+  .filter((n) => !(n.type === "COMPONENT" && n.parent?.type === "COMPONENT_SET"));
+
+return {
+  entries: nodes.map((n) => ({
+    kind: n.type === "COMPONENT_SET" ? "componentSet" : "component",
+    id: n.id,
+    name: n.name,
+    scope: page.name,
+    pageId: page.id,
+    signature: buildSignature(n, page.name),
+  })),
+};
+```
+
+Two things worth knowing about the output:
+
+- **It is bulky.** A signature is ~30 fields per component, so capture one page
+  at a time and expect the inventory to be large. That is fine — it is committed
+  as the record of what the file looked like.
+- **`textNodes` carries real copy from the file.** The classifier reads sizes and
+  counts, and by default does *not* put the text into a name (a label is instance
+  content and changes). Do not turn `includeTextHint` on for a library whose
+  labels are placeholders.
+
+## Renaming just a selection
+
+MCP cannot read the user's live selection. What it can do is take a **link to
+it**, which is one right-click away and does the same job:
+
+> In Figma → select the component(s) → right-click → **Copy link to selection**
+
+The `node-id=1643-43256` in that URL is node id `1643:43256`. Capture inside
+that node instead of the whole page:
+
+```js
+const root = await figma.getNodeByIdAsync("1643:43256");
+if (!root) throw new Error("That node is not in this file — check the link");
+// Loading the page the node lives on is still required.
+const page = root.type === "PAGE" ? root : (() => { let p = root; while (p.parent && p.type !== "PAGE") p = p.parent; return p; })();
+await figma.setCurrentPageAsync(page);
+
+const nodes = ("findAllWithCriteria" in root ? root : page)
+  .findAllWithCriteria({ types: ["COMPONENT", "COMPONENT_SET"] })
+  .filter((n) => !(n.type === "COMPONENT" && n.parent?.type === "COMPONENT_SET"));
+
+return {
+  // Recorded so a later reader knows this inventory is a SLICE of the file,
+  // not the file — `check` and `plan` say so in their output.
+  scopeNodeId: root.id,
+  entries: nodes.map((n) => ({ /* …as above… */ })),
+};
+```
+
+**Variables cannot be scoped this way.** They are file-level, not canvas nodes —
+`getLocalVariablesAsync` has no subtree. Narrow those by collection when
+capturing, or by name at plan time:
+
+```bash
+node "$S/plan.mjs" --kind variable --only "palette/**"
+```
+
+Say which of the two you are doing out loud. "I renamed the selection" and "I
+renamed everything matching `palette/**`" are different claims, and only one of
+them is true of a variable pass.
+
 ## Layers inside a component
 
 Only capture these when layer naming is in scope — they are numerous and their

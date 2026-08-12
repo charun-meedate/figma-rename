@@ -70,7 +70,32 @@
 
     "$comment_sizes": "spacing/md rather than spacing/4. Switch to \"numeric\" if the team spells its scale that way.",
     "sizeNaming": "semantic",
-    "colorGroup": "palette"
+    "colorGroup": "palette",
+
+    "$comment_components": "Components are not named like tokens, so they get their own block. Anything named here REPLACES the token setting; segmentCase and aliases are inherited when this block stays silent about them. Without this block, components only get spelling normalisation — the token `structure` above would send every one of them to needsReview, because \"Button\" is one segment and \"button\" is not a token category.",
+    "components": {
+      "segmentCase": "pascal",
+
+      "$comment_structure": "One segment is a legitimate component name (Button, Modal). Grouping is optional and shallow.",
+      "structure": {
+        "minSegments": 1,
+        "maxSegments": 3
+      },
+
+      "$comment_conforming": "Already-good component names. Add your own top-level groups here.",
+      "conforming": ["Button/**", "Modal/**", "Icon/**", "Avatar/**", "Card/**"],
+
+      "ignore": ["_wip/**", "deprecated/**", "z-old/**"],
+
+      "$comment_classifier": "The structural classifier (see references/components.md). priorities move a built-in rule, disable turns one off, pageHints add a page-name fallback — so a library can tune it without editing the installed skill. minConfidence drops the weaker guesses.",
+      "classifier": {
+        "minConfidence": "medium",
+        "priorities": {},
+        "pageHints": {},
+        "disable": [],
+        "includeTextHint": false
+      }
+    }
   },
 
   "code": {

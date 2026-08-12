@@ -123,10 +123,16 @@ function mergeConfig(base, child) {
   for (const key of ['figma', 'convention', 'code']) {
     if (base[key] && child[key]) merged[key] = { ...base[key], ...child[key] };
   }
-  for (const key of ['structure', 'transform']) {
+  for (const key of ['structure', 'transform', 'components']) {
     if (base.convention?.[key] && child.convention?.[key]) {
       merged.convention[key] = { ...base.convention[key], ...child.convention[key] };
     }
+  }
+  if (base.convention?.components?.classifier && child.convention?.components?.classifier) {
+    merged.convention.components.classifier = {
+      ...base.convention.components.classifier,
+      ...child.convention.components.classifier,
+    };
   }
   delete merged.extends;
   return merged;
@@ -249,8 +255,12 @@ export async function loadConfig(explicitPath) {
   const KNOWN_TOP = ['extends', 'figma', 'inventoryPath', 'renameMapPath', 'kinds', 'convention', 'code'];
   const KNOWN_CONVENTION = [
     'separator', 'segmentCase', 'aliases', 'rules', 'conforming', 'ignore', 'structure',
-    'transform', 'sizeNaming', 'colorGroup',
+    'transform', 'sizeNaming', 'colorGroup', 'components',
   ];
+  const KNOWN_COMPONENTS = [
+    'segmentCase', 'aliases', 'rules', 'conforming', 'ignore', 'structure', 'transform', 'classifier',
+  ];
+  const KNOWN_CLASSIFIER = ['minConfidence', 'priorities', 'pageHints', 'disable', 'includeTextHint'];
   const KNOWN_CODE = [
     'roots', 'include', 'exclude', 'generated', 'spellings', 'cssPrefix', 'flutterPrefix', 'tokensConfig',
   ];
@@ -261,8 +271,25 @@ export async function loadConfig(explicitPath) {
   errors.push(
     ...unknown(config, [...KNOWN_TOP, 'extendsFrom'], '`'),
     ...unknown(config.convention, KNOWN_CONVENTION, '`convention.'),
+    ...unknown(config.convention?.components, KNOWN_COMPONENTS, '`convention.components.'),
+    ...unknown(config.convention?.components?.classifier, KNOWN_CLASSIFIER, '`convention.components.classifier.'),
     ...unknown(config.code, KNOWN_CODE, '`code.'),
   );
+
+  const classifier = convention.components?.classifier;
+  if (classifier) {
+    if (classifier.minConfidence !== undefined && !['low', 'medium', 'high'].includes(classifier.minConfidence)) {
+      errors.push(`convention.components.classifier.minConfidence "${classifier.minConfidence}" must be low, medium or high.`);
+    }
+    for (const [key, shape] of [['priorities', 'object'], ['pageHints', 'object']]) {
+      if (classifier[key] !== undefined && (typeof classifier[key] !== shape || Array.isArray(classifier[key]))) {
+        errors.push(`convention.components.classifier.${key} must be an object.`);
+      }
+    }
+    if (classifier.disable !== undefined && !Array.isArray(classifier.disable)) {
+      errors.push('convention.components.classifier.disable must be an array of rule names.');
+    }
+  }
 
   if (config.kinds !== undefined) {
     if (!Array.isArray(config.kinds)) {

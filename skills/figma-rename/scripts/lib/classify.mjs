@@ -164,7 +164,32 @@ const MISSING = [
  *
  * @returns {{name, reason, confidence, priority, matched}|null}
  */
-export function classifyComponent(signature, { pageName = '' } = {}) {
+/**
+ * The rule table with a project's overrides applied.
+ *
+ * The priorities are data — the header says so — but before this they were data
+ * inside an installed skill, so tuning them meant editing a file that the next
+ * `install.sh` overwrites. That is the fork this skill's `extends` mechanism
+ * exists to prevent, reappearing one directory down.
+ *
+ * `convention.components.classifier.priorities` moves a rule; `pageHints` adds
+ * or replaces a page-name fallback. Both travel with the shared standard.
+ */
+export function rulesWith({ priorities = {}, disable = [] } = {}) {
+  const disabled = new Set(disable);
+  const unknown = Object.keys(priorities).filter((name) => !RULES.some((r) => r.name === name));
+  if (unknown.length) {
+    throw new Error(
+      `classifier.priorities names rule(s) that do not exist: ${unknown.join(', ')}.\n` +
+        `Rules: ${[...new Set(RULES.map((r) => r.name))].join(', ')}`,
+    );
+  }
+  return RULES.filter((r) => !disabled.has(r.name)).map((r) =>
+    priorities[r.name] === undefined ? r : { ...r, priority: priorities[r.name] },
+  );
+}
+
+export function classifyComponent(signature, { pageName = '', classifier = {} } = {}) {
   if (!signature) return null;
   const absent = MISSING.filter((key) => signature[key] === undefined);
   if (absent.length) {
@@ -175,7 +200,8 @@ export function classifyComponent(signature, { pageName = '' } = {}) {
   }
   const sig = { textNodes: [], childNames: [], variantProps: [], ...signature };
 
-  const matches = RULES.filter((r) => r.test(sig)).sort((a, b) => b.priority - a.priority);
+  const table = classifier.priorities || classifier.disable ? rulesWith(classifier) : RULES;
+  const matches = table.filter((r) => r.test(sig)).sort((a, b) => b.priority - a.priority);
   if (matches.length) {
     const best = matches[0];
     const evidence = [];
@@ -199,7 +225,7 @@ export function classifyComponent(signature, { pageName = '' } = {}) {
   }
 
   const page = String(pageName || sig.pageContext || '').toLowerCase();
-  for (const [keyword, label] of Object.entries(PAGE_HINTS)) {
+  for (const [keyword, label] of Object.entries({ ...PAGE_HINTS, ...(classifier.pageHints ?? {}) })) {
     if (page.includes(keyword)) {
       return {
         name: label,
@@ -226,8 +252,8 @@ export function classifyComponent(signature, { pageName = '' } = {}) {
  * time someone writes a different label into an instance. The team's own deck
  * says to name by function, not appearance.
  */
-export function suggestComponentName(signature, { pageName = '', includeTextHint = false } = {}) {
-  const classification = classifyComponent(signature, { pageName });
+export function suggestComponentName(signature, { pageName = '', includeTextHint = false, classifier = {} } = {}) {
+  const classification = classifyComponent(signature, { pageName, classifier });
   if (!classification) return null;
 
   let name = classification.name;

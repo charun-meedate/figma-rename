@@ -177,6 +177,42 @@ function fillTemplate(template, match) {
   return template.replace(/\$(\d)/g, (_, digit) => match[Number(digit)] ?? '');
 }
 
+/** Kinds that are named like components, not like tokens. */
+export const COMPONENT_KINDS = new Set(['component', 'componentSet', 'layer']);
+
+/**
+ * The convention that applies to one kind.
+ *
+ * Tokens and components are not named by the same rules, and pretending they
+ * are had a concrete cost: aurora's `structure` (two segments minimum, token
+ * categories) sent EVERY component to needsReview, because `Button` is one
+ * segment and `button` is not a token category. The shipped example quietly
+ * admitted it with `"kinds": ["variable"]`.
+ *
+ * So `convention.components` is a sub-convention. Anything it names replaces the
+ * token setting wholesale — `structure`, `rules`, `conforming`, `ignore` — while
+ * plain spelling settings it stays silent about (`segmentCase`, `aliases`) are
+ * inherited, because "we write kebab-case" is usually meant for the whole file.
+ *
+ * With no `components` block at all, components get spelling normalisation only.
+ * Inheriting the token `structure` there would be the old bug; inventing a
+ * component structure would be guessing at the team's standard.
+ */
+export function conventionForKind(convention = {}, kind) {
+  if (!COMPONENT_KINDS.has(kind)) return convention;
+  const { components, ...tokenSide } = convention;
+  const base = { ...tokenSide, rules: [], conforming: [], ignore: [], structure: undefined };
+  if (!components) return base;
+  return {
+    ...base,
+    ...components,
+    // `structure` and `transform` are objects; a components block that names one
+    // replaces it rather than merging half of the token version into it.
+    structure: components.structure,
+    transform: components.transform ?? undefined,
+  };
+}
+
 export function compileConvention(convention = {}) {
   const rules = (convention.rules ?? []).map((rule, i) => {
     // `$src` is stamped on by the extends resolver. Without it, an index into
@@ -203,6 +239,21 @@ export function compileConvention(convention = {}) {
     rules,
     conforming: (convention.conforming ?? []).map(compileGlob),
     ignore: (convention.ignore ?? []).map(compileGlob),
+  };
+}
+
+/**
+ * One compiled convention per kind, so plan.mjs does not have to know which
+ * settings are token-shaped and which are component-shaped.
+ */
+export function compileConventions(convention = {}) {
+  const tokens = compileConvention(convention);
+  const components = compileConvention(conventionForKind(convention, 'component'));
+  return {
+    tokens,
+    components,
+    hasComponentBlock: Boolean(convention.components),
+    for: (kind) => (COMPONENT_KINDS.has(kind) ? components : tokens),
   };
 }
 

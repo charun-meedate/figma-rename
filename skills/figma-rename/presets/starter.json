@@ -26,7 +26,17 @@
     },
 
     "sizeNaming": "semantic",
-    "colorGroup": "colors"
+    "colorGroup": "colors",
+
+    "$comment_components": "Components get their own rules. Keep it loose until the team has decided how components are named — an empty structure means nothing is rejected for shape.",
+    "components": {
+      "segmentCase": "pascal",
+      "conforming": [],
+      "ignore": ["_wip/**", "deprecated/**"],
+      "classifier": {
+        "minConfidence": "medium"
+      }
+    }
   },
 
   "code": {

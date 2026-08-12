@@ -22,7 +22,9 @@
 // than a confident guess.
 
 import { COMMON_FLAGS, VALID_KINDS, loadConfig, parseArgs } from './lib/config.mjs';
-import { compileConvention, compileGlob, matchesAny, proposeName } from './lib/convention.mjs';
+import { compileConventions, compileGlob, matchesAny, proposeName } from './lib/convention.mjs';
+import { COMPONENT_KINDS } from './lib/convention.mjs';
+import { findNameCollisions, suggestComponentName } from './lib/classify.mjs';
 import { loadInventory } from './lib/inventory.mjs';
 import { MAP_VERSION, conventionHash, loadMapIfPresent, mergePlans, writeMap } from './lib/map.mjs';
 import { toPascal } from './lib/naming.mjs';
@@ -56,7 +58,7 @@ async function main() {
   }
 
   const inventory = await loadInventory(config.inventoryPath);
-  const convention = compileConvention(config.convention);
+  const conventions = compileConventions(config.convention);
 
   if (args.kind && !VALID_KINDS.has(args.kind)) {
     const near = [...VALID_KINDS].filter((k) => k.toLowerCase().includes(String(args.kind).toLowerCase().slice(0, 4)));
@@ -122,13 +124,68 @@ async function main() {
     );
   }
 
+  // Components: the same suggestion path as tokens, but the evidence is the
+  // component's shape rather than a value. Only entries whose inventory carries
+  // a `signature` participate — see references/inventory.md for the capture.
+  const componentSuggestions = new Map();
+  const componentCollisions = [];
+  if (!args['no-suggest']) {
+    const classifier = config.convention?.components?.classifier ?? {};
+    const withSignature = scoped.filter((e) => COMPONENT_KINDS.has(e.kind) && e.signature);
+    const proposals = [];
+    for (const entry of withSignature) {
+      const suggestion = suggestComponentName(entry.signature, {
+        pageName: entry.scope ?? '',
+        includeTextHint: Boolean(classifier.includeTextHint),
+        classifier,
+      });
+      if (!suggestion) continue;
+      if (classifier.minConfidence && CONFIDENCE_RANK[suggestion.confidence] < CONFIDENCE_RANK[classifier.minConfidence]) {
+        continue;
+      }
+      // Same shape as a value-based suggestion, so the row-building code below
+      // does not have to know which engine produced it.
+      proposals.push({
+        ...suggestion,
+        id: entry.id,
+        currentName: entry.name,
+        suggestedName: suggestion.name,
+        source: 'shape',
+      });
+    }
+    // Two components landing on one name is a real question, not something to
+    // paper over with a numeric suffix — the shape evidence for each is what a
+    // person needs to tell them apart.
+    const clashing = new Set();
+    for (const collision of findNameCollisions(proposals)) {
+      componentCollisions.push(collision);
+      for (const member of collision.members) clashing.add(member.id);
+    }
+    for (const p of proposals) {
+      if (!clashing.has(p.id) && p.name !== p.currentName) componentSuggestions.set(p.id, p);
+    }
+    if (withSignature.length) {
+      console.log(
+        `[plan] component shapes: ${proposals.length} of ${withSignature.length} classified` +
+          `${componentCollisions.length ? `, ${componentCollisions.length} name clash(es) to settle` : ''}`,
+      );
+    }
+    const missingSignature = scoped.filter((e) => COMPONENT_KINDS.has(e.kind) && !e.signature);
+    if (missingSignature.length) {
+      console.log(
+        `[plan] ${missingSignature.length} component(s) have no captured shape — only spelling can be proposed for them. ` +
+          'references/inventory.md has the signature capture script.',
+      );
+    }
+  }
+
   const groups = new Map();
   const needsReview = [];
   const counts = { renamed: 0, normalized: 0, unchanged: 0, conforming: 0, ignored: 0, needsReview: 0, suggested: 0 };
 
-  // Anything the engine parked for a human is out of the batches entirely.
-  // Without this an alias or a duplicate falls through to the normalizer and
-  // gets a pointless "Color 1 -> color-1" rename on top of its open question.
+  // Anything parked for a human is out of the batches entirely. Without this an
+  // alias, a duplicate or a name clash falls through to the normalizer and gets
+  // a pointless "Color 1 -> color-1" rename on top of its open question.
   const parked = new Set();
   for (const item of suggestReview) {
     if (!kinds.includes('variable')) continue;
@@ -136,10 +193,33 @@ async function main() {
     needsReview.push({ kind: 'variable', id: item.id, name: item.name, scope: null, suggestion: item.suggestion, why: item.why });
     counts.needsReview++;
   }
+  for (const collision of componentCollisions) {
+    for (const member of collision.members) {
+      const entry = scoped.find((e) => e.id === member.id);
+      if (!entry) continue;
+      // A name the convention already accepts is not part of the clash — it is
+      // simply the component that already owns that name.
+      if (proposeName(entry.name, conventions.for(entry.kind)).status === 'conforming') continue;
+      const others = collision.members
+        .filter((m) => m.id !== member.id)
+        .map((m) => `"${m.currentName}"`)
+        .join(', ');
+      parked.add(member.id);
+      needsReview.push({
+        kind: entry.kind,
+        id: member.id,
+        name: member.currentName,
+        scope: entry.scope ?? null,
+        suggestion: collision.name,
+        why: `its shape reads as "${collision.name}", and so does ${others} — two components cannot share one name, and their shapes cannot say which is which`,
+      });
+      counts.needsReview++;
+    }
+  }
 
   for (const entry of scoped) {
     if (parked.has(entry.id)) continue;
-    const result = proposeName(entry.name, convention);
+    const result = proposeName(entry.name, conventions.for(entry.kind));
     counts[result.status] = (counts[result.status] ?? 0) + 1;
 
     if (result.status === 'needsReview') {
@@ -154,7 +234,7 @@ async function main() {
       continue;
     }
 
-    const suggestion = suggested.get(entry.id);
+    const suggestion = suggested.get(entry.id) ?? componentSuggestions.get(entry.id);
     let to = result.to;
     let rule = result.rule;
     let reason = null;

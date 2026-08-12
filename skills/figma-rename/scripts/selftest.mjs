@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { buildReplacer, namespaceClassPairs, rewrite, spellingsFor } from './lib/codemod.mjs';
 import { classifyComponent, findNameCollisions, suggestComponentName } from './lib/classify.mjs';
-import { caseSegment, compileConvention, normalizeName, proposeName } from './lib/convention.mjs';
+import { caseSegment, compileConvention, compileConventions, normalizeName, proposeName } from './lib/convention.mjs';
 import { MAP_VERSION } from './lib/map.mjs';
 import {
   SHADE_CHROMATIC,
@@ -1331,6 +1331,183 @@ test('the artefact exclusion cannot be overridden away', () => {
   );
   assert.ok(printed.code.exclude.includes('rename.config.json'));
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --------------------------------------------------------------- components
+
+section('components');
+
+const componentSig = (over) => ({
+  width: 0, height: 0, aspectRatio: 1, childCount: 0, directChildCount: 0, totalDescendants: 0,
+  layoutMode: 'NONE', hasAutoLayout: false, cornerRadius: 0, hasFill: false, hasSolidFill: false,
+  hasStroke: false, hasImageFill: false, hasGradientFill: false, textNodes: [], childTypes: [],
+  childNames: [], smallInstances: 0, variantProps: [], ...over,
+});
+
+/** A project set up for component renaming, extending aurora. */
+function componentProject(entries, overrides = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-comp-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({ extends: 'aurora', figma: { fileKey: 'K' }, kinds: ['componentSet', 'component'], ...overrides }),
+  );
+  fs.writeFileSync(path.join(dir, 'rename/inventory.json'), JSON.stringify({ fileKey: 'K', entries }));
+  return {
+    dir,
+    readMap: () => JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8')),
+    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
+  };
+}
+
+test('the token structure no longer sends every component to needsReview', () => {
+  // Under aurora's TOKEN structure (2 segments, token categories) a component
+  // called `Button` failed both tests — the shipped example admitted it with
+  // `"kinds": ["variable"]`.
+  const p = componentProject([
+    { kind: 'component', id: 'C1', name: 'btn primary', scope: 'Components', pageId: '0:1' },
+  ]);
+  const result = run('plan.mjs', ['--dry-run'], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /btn primary {2}-> {2}BtnPrimary/, result.out);
+  p.cleanup();
+});
+
+test('a component convention is separate from the token one', () => {
+  const conventions = compileConventions({
+    segmentCase: 'kebab',
+    structure: { minSegments: 2, categories: ['palette'] },
+    components: { segmentCase: 'pascal', structure: { minSegments: 1 } },
+  });
+  // The same name, judged by each side.
+  assert.equal(proposeName('Button', conventions.for('variable')).status, 'needsReview');
+  assert.equal(proposeName('btn primary', conventions.for('component')).to, 'BtnPrimary');
+});
+
+test('with no components block, components get spelling only — not the token structure', () => {
+  const conventions = compileConventions({
+    segmentCase: 'kebab',
+    structure: { minSegments: 2, categories: ['palette'] },
+    rules: [{ match: '**', to: 'palette/$1' }],
+  });
+  const result = proposeName('btn primary', conventions.for('component'));
+  assert.equal(result.status, 'normalized', JSON.stringify(result));
+  assert.equal(result.to, 'btn-primary', 'token rules must not reach components');
+});
+
+test('a shape suggests a component name, with its evidence', () => {
+  const p = componentProject([
+    {
+      kind: 'component', id: 'C1', name: 'Component 7', scope: 'Components', pageId: '0:1',
+      signature: componentSig({ width: 400, height: 320, hasClose: true, hasOverlay: true, childCount: 4, totalDescendants: 12, textNodes: [{ text: 'Confirm', fontSize: 20 }, { text: 'Sure?', fontSize: 14 }] }),
+    },
+  ]);
+  const result = run('plan.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  const row = p.readMap().batches.flatMap((b) => b.renames)[0];
+  assert.equal(row.to, 'Modal');
+  assert.equal(row.source, 'shape');
+  assert.match(row.reason, /Structure: 400×320/);
+  assert.equal(row.confidence, 'high');
+  p.cleanup();
+});
+
+test('a component with no captured shape gets spelling only, and is told so', () => {
+  const p = componentProject([
+    { kind: 'component', id: 'C1', name: 'thing 9', scope: 'Components', pageId: '0:1' },
+  ]);
+  const result = run('plan.mjs', [], p.dir);
+  assert.match(result.out, /have no captured shape/);
+  assert.equal(p.readMap().batches.flatMap((b) => b.renames)[0].to, 'Thing9');
+  p.cleanup();
+});
+
+test('two components whose shapes read alike go to review, not to a suffix', () => {
+  const button = componentSig({ width: 120, height: 40, cornerRadius: 8, hasFill: true, hasSolidFill: true, childCount: 1, totalDescendants: 1, textNodes: [{ text: 'Save', fontSize: 14 }] });
+  const p = componentProject([
+    { kind: 'component', id: 'C1', name: 'btn one', scope: 'Components', pageId: '0:1', signature: button },
+    { kind: 'component', id: 'C2', name: 'btn two', scope: 'Components', pageId: '0:1', signature: button },
+  ]);
+  const result = run('plan.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  const map = p.readMap();
+  const rows = map.batches.flatMap((b) => b.renames);
+  assert.equal(rows.some((r) => /Button ?2|Button-2/.test(r.to)), false, 'a numeric suffix tells nobody which is which');
+  assert.equal(map.needsReview.length, 2, JSON.stringify(map.needsReview));
+  assert.match(map.needsReview[0].why, /cannot say which is which/);
+  p.cleanup();
+});
+
+test('a component that already conforms is not dragged into a clash', () => {
+  const button = componentSig({ width: 120, height: 40, cornerRadius: 8, hasFill: true, hasSolidFill: true, childCount: 1, totalDescendants: 1, textNodes: [{ text: 'Save', fontSize: 14 }] });
+  const p = componentProject([
+    { kind: 'component', id: 'C1', name: 'btn primary', scope: 'Components', pageId: '0:1', signature: button },
+    // aurora's components.conforming already accepts Button/**
+    { kind: 'component', id: 'C2', name: 'Button/Primary', scope: 'Components', pageId: '0:1', signature: button },
+  ]);
+  const result = run('plan.mjs', [], p.dir);
+  const map = p.readMap();
+  assert.equal(map.needsReview.length, 1, JSON.stringify(map.needsReview.map((i) => i.name)));
+  assert.equal(map.needsReview[0].name, 'btn primary');
+  assert.match(result.out, /conforming {2}1/);
+  p.cleanup();
+});
+
+test('the classifier can be retuned from the shared standard', () => {
+  const button = componentSig({ width: 120, height: 40, cornerRadius: 8, hasFill: true, hasSolidFill: true, childCount: 1, totalDescendants: 1, textNodes: [{ text: 'Save', fontSize: 14 }] });
+  const p = componentProject(
+    [{ kind: 'component', id: 'C1', name: 'Component 3', scope: 'Components', pageId: '0:1', signature: button }],
+    { convention: { components: { classifier: { priorities: { Tooltip: 999 } } } } },
+  );
+  const result = run('plan.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  // Retuned without editing the installed skill — which is the whole point.
+  assert.equal(p.readMap().batches.flatMap((b) => b.renames)[0].to, 'Tooltip');
+  p.cleanup();
+});
+
+test('a classifier override naming a rule that does not exist is refused', () => {
+  const p = componentProject(
+    [{ kind: 'component', id: 'C1', name: 'Component 3', scope: 'Components', pageId: '0:1', signature: componentSig({ width: 10, height: 10 }) }],
+    { convention: { components: { classifier: { priorities: { Buton: 10 } } } } },
+  );
+  const result = run('plan.mjs', [], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /do not exist: Buton/);
+  p.cleanup();
+});
+
+test('an unknown key inside the components block is refused', () => {
+  const p = componentProject([], { convention: { components: { segmentCases: 'pascal' } } });
+  const result = run('plan.mjs', ['--print-config'], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /`convention\.components\.segmentCases` is not a setting/);
+  p.cleanup();
+});
+
+test('a hand-written signature is refused at load', () => {
+  const p = componentProject([
+    { kind: 'component', id: 'C1', name: 'x', scope: 'C', signature: { width: 10 } },
+  ]);
+  const result = run('plan.mjs', [], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /signature is missing width\/textNodes|references\/inventory\.md/);
+  p.cleanup();
+});
+
+test('every capture script in inventory.md is valid JavaScript', () => {
+  // These run inside use_figma, where a syntax error surfaces as a failed Figma
+  // call rather than as a broken doc.
+  const doc = fs.readFileSync(path.resolve(HERE, '../references/inventory.md'), 'utf8');
+  const blocks = [...doc.matchAll(/```js\n([\s\S]*?)```/g)].map((m) => m[1]);
+  assert.ok(blocks.length >= 5, `expected several capture scripts, found ${blocks.length}`);
+  let checked = 0;
+  for (const block of blocks) {
+    if (block.includes('…as above…')) continue; // deliberately elided
+    assertParses(block, 'a capture script in references/inventory.md');
+    checked++;
+  }
+  assert.ok(checked >= 5);
 });
 
 // ------------------------------------------------------- config and errors
