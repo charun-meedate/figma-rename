@@ -25,6 +25,13 @@ inventory ──plan──▶ rename-map.json ──┬─▶ use_figma        (
   (read Figma)      (reviewed, committed)  └─▶ apply-code.mjs  (codebase)
 ```
 
+The inventory comes from the `use_figma` read scripts in
+[`references/inventory.md`](references/inventory.md) — **not** from
+`get_variable_defs` or `list_file_components_for_code_connect`. Those give names
+without ids, one resolved value instead of every mode, and only the tokens that
+happen to be used. Everything downstream needs exactly what they drop. Step 1 of
+the manual has the comparison.
+
 The everyday loop, once a project is set up — one batch, one commit. Every step
 is gated: nothing ships undecided, and nothing reaches code before Figma.
 

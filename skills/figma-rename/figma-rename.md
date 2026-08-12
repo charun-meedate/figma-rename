@@ -233,6 +233,24 @@ scripts here cannot reach Figma. `references/inventory.md` has one script per
 kind, plus the page fan-out rule (one `setCurrentPageAsync` per call; parallel
 calls for multiple pages).
 
+> **Use those scripts. Do not assemble the inventory out of the convenience MCP
+> tools** — `get_variable_defs`, `list_file_components_for_code_connect`,
+> `get_metadata`. They are the obvious shortcut, and an eval run took it and
+> produced a confident audit that nothing downstream could use:
+>
+> | The capture scripts give you | `get_variable_defs` gives you |
+> |---|---|
+> | every variable in the file | only the ones **used** by the nodes you queried — 368 of 1,148 |
+> | `id` | nothing, so no rename can be addressed and `emit-figma` has no target |
+> | `valuesByMode`, every mode | one resolved value from the default mode; Dark is invisible |
+> | an alias kept as a pointer | the alias resolved away, so semantic tokens read as raw values |
+> | `scopes` (GAP, CORNER_RADIUS…) | nothing — the strongest signal numeric tokens have |
+> | `collection` | nothing, so shade ladders cannot be calibrated per ramp |
+>
+> Every one of those losses is silent: the plan still runs, it just proposes
+> worse names and cannot be applied to anything. **If what you captured has
+> names but no ids, it is not an inventory** — it is a report.
+
 Commit it. Two reasons, both load-bearing:
 
 1. It is the only record of what the names **were**. Six months later the
