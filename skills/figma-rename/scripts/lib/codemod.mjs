@@ -26,7 +26,14 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { toCamel, toDot, toKebab, toPascal, toSnake } from './naming.mjs';
+import { toCamel, toKebab, toPascal, segments } from './naming.mjs';
+
+// snake_case and the DTCG dot path. They live here rather than in naming.mjs
+// because no generator in figma-token-export emits them — they exist for
+// hand-written codebases that spell tokens that way, and keeping them out of
+// naming.mjs is what lets that file stay byte-identical with its twin.
+const toSnake = (name, { dropSegments = 0 } = {}) => segments(name).slice(dropSegments).join('_').toLowerCase();
+const toDot = (name) => segments(name).join('.').toLowerCase();
 
 /** Lookaround pairs per guard kind. The escaped literal is dropped in between. */
 const GUARDS = {
@@ -90,10 +97,66 @@ export function spellingsFor(rename, opts = {}) {
 }
 
 /**
- * Class names that follow from a token changing its first segment.
+ * The names `figma-token-export` actually gives a namespace, per target.
+ *
+ * These mirror the generator line for line, because the previous version of
+ * this function guessed and got the most common case wrong:
+ *
+ *   flutter.mjs:  /^colou?rs?$/i.test(ns) ? `${prefix}Colors` : `${prefix}${Pascal(ns)}Colors`
+ *
+ * So `color/**` produces `AppColors`, not `AppColorColors`. Moving `color/**`
+ * to `surface/**` — the example used throughout these docs — therefore had the
+ * codemod rewriting a class that never existed, while leaving the real
+ * `AppColors` untouched.
+ *
+ * Two more corrections in the same family:
+ *  - shadows have no per-namespace class (one `${prefix}Shadows`, plus one per
+ *    mode), so the old `${prefix}${Ns}Shadows` pair could never match anything;
+ *  - web emits a single `color` object, so only *dimension* namespaces get a
+ *    TypeScript object — and those were missing entirely, meaning a TS project
+ *    got no namespace-object rename at all.
+ *
+ * Both the colour and the dimension spelling are emitted for a namespace: a
+ * rename row does not carry `resolvedType`, and a pair that matches nothing is
+ * reported as such rather than doing damage.
+ */
+function generatedNamesFor(ns, flutterPrefix) {
+  const pascal = toPascal(ns);
+  return {
+    // Dart colours — the special case that was wrong.
+    dartColors: /^colou?rs?$/i.test(ns) ? `${flutterPrefix}Colors` : `${flutterPrefix}${pascal}Colors`,
+    // Dart dimension / typography scale classes.
+    dartScale: `${flutterPrefix}${pascal}`,
+    // TypeScript dimension objects.
+    webObject: toCamel(ns),
+  };
+}
+
+/**
+ * Names the web target exports regardless of any namespace (`web.mjs:197-199`).
+ *
+ * `export const color` is the whole colour set, not a namespace object — so a
+ * `color/** -> surface/**` rename must NOT rewrite it. Getting this wrong is
+ * worse than missing a rename: it renames a symbol that had nothing to do with
+ * the move, and the file still compiles.
+ */
+const WEB_FIXED_EXPORTS = new Set(['color', 'colorVar', 'typography', 'shadow', 'boxShadow', 'boxShadowVar']);
+
+/**
+ * Namespace symbols the generator will not hand to a namespace, suffixing with
+ * `Scale` instead (`avoidReserved`).
+ *
+ * Whether it fires depends on which token groups the project exports, which the
+ * codemod cannot see — so a rename landing on one of these produces an advisory
+ * rather than a rewrite to a name that may gain a suffix.
+ */
+const GENERATOR_RESERVED = new Set(['color', 'colors', 'colour', 'colours', 'typography', 'shadow', 'shadows']);
+
+/**
+ * Class and object names that follow from a token changing its first segment.
  *
  * `figma-token-export` emits one class/object per namespace, so moving *every*
- * `color/**` token under `surface/**` renames `AppColorColors` to
+ * `color/**` token under `surface/**` renames `AppColors` to
  * `AppSurfaceColors` in generated code - and in every consumer that named the
  * class. That rewrite is correct only when the namespace moves WHOLE:
  *
@@ -147,13 +210,23 @@ export function namespaceClassPairs(renames, { flutterPrefix = 'App', allTokenNa
       }
     }
     const [toNs] = toNsSet;
-    for (const suffix of ['', 'Colors', 'Shadows']) {
-      pairs.push({
-        spelling: 'namespaceClass',
-        guard: 'ident',
-        from: `${flutterPrefix}${toPascal(fromNs)}${suffix}`,
-        to: `${flutterPrefix}${toPascal(toNs)}${suffix}`,
-      });
+    if (GENERATOR_RESERVED.has(toNs.toLowerCase())) {
+      advisories.push(
+        `namespace "${fromNs}" moves to "${toNs}", which the generator reserves for its fixed symbols — ` +
+          `the namespace class may come out as "${toPascal(toNs)}Scale" instead. ` +
+          'Regenerate first and check the emitted name before trusting these call sites.',
+      );
+      continue;
+    }
+    const before = generatedNamesFor(fromNs, flutterPrefix);
+    const after = generatedNamesFor(toNs, flutterPrefix);
+    for (const key of ['dartColors', 'dartScale', 'webObject']) {
+      if (before[key] === after[key]) continue;
+      // A fixed web export is not a namespace object — leave it alone.
+      if (key === 'webObject' && (WEB_FIXED_EXPORTS.has(before[key]) || WEB_FIXED_EXPORTS.has(after[key]))) {
+        continue;
+      }
+      pairs.push({ spelling: 'namespaceClass', guard: 'ident', from: before[key], to: after[key] });
     }
   }
   return { pairs, advisories };

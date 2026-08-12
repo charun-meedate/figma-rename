@@ -5,9 +5,8 @@
     "toCamel": "15eeeb99b7146326",
     "toKebab": "bcbdefed4b97b67f",
     "toPascal": "bddfea7a4396de01",
-    "toSnake": "1e9cc168f556a12b",
-    "toDot": "cc6634645c0f6fd8",
     "namespaceOf": "9262d7d8dbd0e34c",
+    "avoidReserved": "8bb54efdb65f7439",
     "assertUniqueIdentifiers": "b4f57de36406c2d2"
   }
 }

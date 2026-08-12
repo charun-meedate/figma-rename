@@ -1,12 +1,14 @@
-// Name transforms shared by every spelling this skill rewrites.
+// Name transforms shared by every target generator.
 //
-// IMPORTANT: this file is a deliberate copy of
-// `skills/figma-token-export/scripts/lib/naming.mjs`. The codemod has to
-// produce byte-identical identifiers to the ones that skill's generators emit —
-// if the two drift, a rename rewrites `AppColors.textPrimary` to a name the
-// generator never writes, and the project stops compiling with no obvious
-// culprit. `selftest.mjs` compares the two files when both are present and
-// fails on drift. Change one, change the other.
+// IMPORTANT: below the header this file is byte-identical to
+// `figma-token-export`'s copy, and `naming.lock.json` + selftest.mjs keep it
+// that way. The codemod has to produce exactly the identifiers that skill's
+// generators emit; if the two drift, a rename rewrites `AppColors.textPrimary`
+// to a name nothing generates and the project stops compiling with no obvious
+// culprit. Change one, change the other, then re-lock.
+//
+// Spellings only this skill needs (snake, dot) live in codemod.mjs, so that
+// "identical" can mean identical rather than "identical apart from…".
 
 /** Splits a token path into clean segments: "body/lg/bold" -> ["body","lg","bold"]. */
 export function segments(name) {
@@ -49,19 +51,25 @@ export function toPascal(name) {
     .join('');
 }
 
-/** snake_case, for platforms that spell tokens that way. */
-export function toSnake(name, { dropSegments = 0 } = {}) {
-  return segments(name).slice(dropSegments).join('_').toLowerCase();
-}
-
-/** Dot path, the DTCG / JSON spelling: "text/primary/default" -> "text.primary.default". */
-export function toDot(name) {
-  return segments(name).join('.').toLowerCase();
-}
-
 /** First path segment — used to split a flat token map into namespaces. */
 export function namespaceOf(name) {
   return name.split('/')[0];
+}
+
+/**
+ * Keeps a namespace-derived symbol out of the way of a fixed one.
+ *
+ * A design system with a `typography/font-size/*` dimension scale AND text
+ * styles wants two symbols called "typography" — the scale and the styles.
+ * Nothing in Figma is wrong there, so failing the export would be punishing the
+ * design file for a codegen detail. The fixed name (the text styles, the
+ * colours) keeps the plain spelling and the namespace scale takes the suffix.
+ *
+ * A collision the suffix does not resolve still throws in
+ * `assertUniqueIdentifiers` — this narrows the failure, it does not hide it.
+ */
+export function avoidReserved(name, reserved, suffix = 'Scale') {
+  return reserved.has(name) ? `${name}${suffix}` : name;
 }
 
 /**

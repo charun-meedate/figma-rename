@@ -310,13 +310,44 @@ test('one literal that would become two different things is refused', () => {
   );
 });
 
-test('a namespace that moves whole produces the class pairs', () => {
+test('a namespace that moves whole produces the names the generator really emits', () => {
   const { pairs, advisories } = namespaceClassPairs(
     [{ kind: 'variable', from: 'color/surface/raised', to: 'surface/raised' }],
     { flutterPrefix: 'App', allTokenNames: ['color/surface/raised'] },
   );
   assert.equal(advisories.length, 0);
-  assert.equal(pairs.find((p) => p.from === 'AppColorColors').to, 'AppSurfaceColors');
+  const from = pairs.map((p) => p.from);
+  // flutter.mjs special-cases /^colou?rs?$/ — the class is AppColors.
+  assert.ok(from.includes('AppColors'), `expected AppColors, got ${JSON.stringify(from)}`);
+  assert.equal(pairs.find((p) => p.from === 'AppColors').to, 'AppSurfaceColors');
+  assert.equal(from.includes('AppColorColors'), false, 'AppColorColors never existed');
+  // Shadows have no per-namespace class.
+  assert.equal(from.some((n) => n.endsWith('Shadows')), false);
+  // `export const color` is the fixed colour object, not a namespace object.
+  assert.equal(from.includes('color'), false, 'renaming the fixed web export would hit unrelated code');
+});
+
+test('a dimension namespace gets its TypeScript object renamed too', () => {
+  const { pairs } = namespaceClassPairs([{ kind: 'variable', from: 'spacing/md', to: 'gap/md' }], {
+    flutterPrefix: 'App',
+    allTokenNames: ['spacing/md'],
+  });
+  const web = pairs.find((p) => p.from === 'spacing');
+  assert.ok(web, `web.mjs exports a dimension namespace object; got ${JSON.stringify(pairs.map((p) => p.from))}`);
+  assert.equal(web.to, 'gap');
+  assert.equal(pairs.find((p) => p.from === 'AppSpacing').to, 'AppGap');
+});
+
+test('moving onto a name the generator reserves is advised, not rewritten', () => {
+  // avoidReserved would suffix the class with `Scale`, and whether it fires
+  // depends on which groups the project exports — which this cannot see.
+  const { pairs, advisories } = namespaceClassPairs(
+    [{ kind: 'variable', from: 'spacing/md', to: 'typography/md' }],
+    { flutterPrefix: 'App', allTokenNames: ['spacing/md'] },
+  );
+  assert.equal(pairs.length, 0);
+  assert.match(advisories[0], /reserves/);
+  assert.match(advisories[0], /Scale/);
 });
 
 test('keeping the first segment produces no namespace class pairs', () => {
@@ -861,9 +892,16 @@ test('naming.mjs is identical to the figma-token-export copy when both are prese
   }
   const mine = namingFunctions(path.join(HERE, 'lib/naming.mjs'));
   const theirs = namingFunctions(sibling);
-  const shared = [...mine.keys()].filter((name) => theirs.has(name));
-  assert.ok(shared.length >= 5, `expected to share several functions, found ${shared.length}`);
-  for (const name of shared) {
+  // The whole export set, not the intersection. Comparing only shared names is
+  // how the two files drifted unnoticed: this skill had added toSnake/toDot and
+  // the sibling had avoidReserved, and every shared body still matched, so the
+  // check passed while the files were no longer the same.
+  assert.deepEqual(
+    [...mine.keys()].sort(),
+    [...theirs.keys()].sort(),
+    'naming.mjs exports a different set of functions from figma-token-export — a spelling only one side knows is a spelling that will drift.',
+  );
+  for (const name of mine.keys()) {
     assert.equal(
       mine.get(name),
       theirs.get(name),
