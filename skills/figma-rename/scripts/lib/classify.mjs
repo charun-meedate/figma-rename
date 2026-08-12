@@ -83,13 +83,29 @@ export const RULES = [
   // Geometry-only, so below Badge: a 24×24 circle is a radio button OR a
   // notification badge, and the one with a number in it is the badge.
   { name: 'Radio Button', priority: 142, test: (s) => s.width <= 24 && s.height <= 24 && s.cornerRadius >= 10 && !s.textNodes.length },
-  { name: 'Toggle', priority: 160, test: (s) => s.hasToggle || (s.width >= 36 && s.width <= 60 && s.height >= 18 && s.height <= 32 && s.cornerRadius >= 8 && s.hasSolidFill) },
-  { name: 'Slider', priority: 158, test: (s) => s.hasSlider || (s.layoutMode === 'HORIZONTAL' && s.width > 100 && s.height <= 30 && s.childCount <= 4) },
+  // DEVIATION FROM THE PLUGIN — geometry widened (36–60 → 24–60 wide, 18–32 →
+  // 12–32 tall) and given an aspect-ratio floor.
+  //
+  // A real toggle from TestDSDS is 28×16. The plugin's floor of 36 missed it
+  // entirely, and Badge (145) caught it instead — "a small filled pill with at
+  // most one label" describes both. Aspect ratio is what actually separates
+  // them: a badge is round-ish, a toggle is a wide pill. The text test is the
+  // second half of that: a toggle never has a label inside the track.
+  { name: 'Toggle', priority: 160, test: (s) => s.hasToggle || (s.width >= 24 && s.width <= 60 && s.height >= 12 && s.height <= 32 && s.cornerRadius >= 8 && s.hasSolidFill && !s.textNodes.length && s.aspectRatio >= 1.4) },
+  // DEVIATION FROM THE PLUGIN — the geometry-only half now requires no text.
+  //
+  // "Horizontal, wider than 100, no taller than 30, at most 4 children" is also
+  // a description of every labelled button in a library — the real 129×28
+  // Button from TestDSDS classified as Slider at medium confidence. A slider's
+  // track carries no text, so requiring that keeps the shape test honest while
+  // leaving the name evidence (hasSlider) at full priority.
+  { name: 'Slider', priority: 158, test: (s) => s.hasSlider || (s.layoutMode === 'HORIZONTAL' && s.width > 100 && s.height <= 30 && s.childCount <= 4 && !s.textNodes.length) },
   { name: 'Icon Button', priority: 155, test: (s) => s.hasIcon && !s.textNodes.length && s.width <= 56 && s.height <= 56 && s.cornerRadius >= 4 },
   { name: 'Button', priority: 150, test: (s) => s.cornerRadius >= 4 && s.hasSolidFill && s.textNodes.length === 1 && s.height >= 28 && s.height <= 64 && s.width <= 300 },
   { name: 'Button', priority: 148, test: (s) => s.hasStroke && s.textNodes.length === 1 && s.height >= 28 && s.height <= 64 && s.width <= 300 && s.cornerRadius >= 4 },
   { name: 'Floating Action Button', priority: 147, test: (s) => s.hasIcon && s.hasSolidFill && s.cornerRadius >= 20 && s.width >= 48 && s.width <= 72 && Math.abs(s.width - s.height) <= 4 },
-  { name: 'Badge', priority: 145, test: (s) => s.width <= 32 && s.height <= 32 && s.hasSolidFill && s.cornerRadius >= 8 && s.textNodes.length <= 1 },
+  // aspectRatio <= 1.4 keeps this off toggle pills; see the Toggle note above.
+  { name: 'Badge', priority: 145, test: (s) => s.width <= 32 && s.height <= 32 && s.hasSolidFill && s.cornerRadius >= 8 && s.textNodes.length <= 1 && s.aspectRatio <= 1.4 },
   { name: 'Tag', priority: 143, test: (s) => s.cornerRadius >= 4 && s.height <= 32 && s.width <= 120 && s.textNodes.length === 1 && (s.hasSolidFill || s.hasStroke) },
   { name: 'Chip', priority: 141, test: (s) => s.cornerRadius >= 12 && s.height <= 40 && s.textNodes.length === 1 && s.hasIcon },
   // DEVIATION FROM THE PLUGIN — priority lowered from 193 to 139.

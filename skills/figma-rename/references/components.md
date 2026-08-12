@@ -5,9 +5,11 @@
 
 - 1. A variant is not a component
 - 2. Layer names inside components
-- 3. Component names in code
+- 3. What a shape can say, and what it cannot
+- 4. Component names in code
 - Code Connect
 - Instances
+- The structural classifier
 
 ---
 
@@ -174,6 +176,8 @@ const stale = page.findAllWithCriteria({ types: ["INSTANCE"] })
 return { stale };
 ```
 
+
+
 ## The structural classifier
 
 A token can be named from its value. A component cannot — but its *shape* is
@@ -197,6 +201,22 @@ Three steps, and the first is the one people miss:
    several rules fire the winner is a ranking, not a fact.
 3. **Review.** Same path as any other suggestion: `review.mjs` shows the reason
    and the confidence, and nothing ships undecided.
+
+### A variant set is measured through one of its variants
+
+A `COMPONENT_SET` is a grid of variants, so measuring the set measures the grid.
+On a real file the Button set came back 553×1126 with 60 children in `GRID`
+layout and classified as **Card**; one of its variants is 129×28 with radius 8
+and one text node, which is a button by any reading.
+
+The capture script therefore measures `node.children[0]` for a set and keeps
+only two facts about the set itself — `variantProps` and `variantCount`. The
+signature records which it did in `measuredFrom` (`"variant"` or `"self"`), so a
+surprising suggestion can be traced without re-reading the file.
+
+This matters more than it sounds: in a real design system nearly every component
+worth renaming is a variant set, so measuring the wrong node is not an edge case,
+it is the common path.
 
 ### What it will not do
 

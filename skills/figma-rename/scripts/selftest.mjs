@@ -610,12 +610,19 @@ test('two variables with one value are reported as duplicates, not suffixed apar
 section('component classifier');
 
 /** A complete, all-falsy signature — override only what the case is about. */
-const sig = (over) => ({
-  width: 0, height: 0, aspectRatio: 1, childCount: 0, directChildCount: 0, totalDescendants: 0,
-  layoutMode: 'NONE', hasAutoLayout: false, cornerRadius: 0, hasFill: false, hasSolidFill: false,
-  hasStroke: false, hasImageFill: false, hasGradientFill: false, textNodes: [], childTypes: [],
-  childNames: [], smallInstances: 0, variantProps: [], ...over,
-});
+// aspectRatio is DERIVED, not defaulted. It used to be hardcoded to 1, which
+// let fixtures describe a 44×24 pill that claimed to be square — and any rule
+// reading the ratio then passed or failed for a reason no real capture could
+// reproduce. The capture script computes width/height; so does this.
+const sig = (over) => {
+  const base = {
+    width: 0, height: 0, childCount: 0, directChildCount: 0, totalDescendants: 0,
+    layoutMode: 'NONE', hasAutoLayout: false, cornerRadius: 0, hasFill: false, hasSolidFill: false,
+    hasStroke: false, hasImageFill: false, hasGradientFill: false, textNodes: [], childTypes: [],
+    childNames: [], smallInstances: 0, variantProps: [], ...over,
+  };
+  return { aspectRatio: base.height > 0 ? base.width / base.height : 1, ...base };
+};
 
 const BUTTON_FILLED = sig({ width: 120, height: 40, cornerRadius: 8, hasFill: true, hasSolidFill: true, childCount: 1, totalDescendants: 1, textNodes: [{ text: 'Save', fontSize: 14 }] });
 const BUTTON_OUTLINE = sig({ width: 120, height: 40, cornerRadius: 8, hasStroke: true, childCount: 1, totalDescendants: 1, textNodes: [{ text: 'Cancel', fontSize: 14 }] });
@@ -640,6 +647,42 @@ test('ordinary component shapes classify as themselves', () => {
     const got = classifyComponent(signature, { pageName: 'Components' });
     assert.equal(got?.name, want, `expected ${want}, got ${got?.name ?? '(none)'}`);
   }
+});
+
+test('real component sets from TestDSDS classify as what they are called', () => {
+  // Captured live from iK3ri10PCRhIXJZ2OyGpJc with the script in
+  // references/inventory.md. The file's own names are the ground truth, and
+  // both of these were wrong before: Button read as Slider (the geometry-only
+  // half of the Slider rule describes any short wide labelled thing) and
+  // Toggle read as Badge (28×16 fell under the plugin's 36px width floor).
+  const button = sig({
+    width: 129, height: 28, childCount: 3, directChildCount: 3, totalDescendants: 7,
+    layoutMode: 'HORIZONTAL', hasAutoLayout: true, cornerRadius: 8, hasFill: true, hasSolidFill: true,
+    textNodes: [{ text: 'Button CTA', fontSize: 12, isBold: true }],
+    variantProps: ['Size', 'Type', 'Icon', 'State'], variantCount: 60, measuredFrom: 'variant',
+    hasIcon: true, smallInstances: 4,
+  });
+  const toggle = sig({
+    width: 28, height: 16, childCount: 1, directChildCount: 1, totalDescendants: 1,
+    layoutMode: 'HORIZONTAL', hasAutoLayout: true, cornerRadius: 9999, hasFill: true, hasSolidFill: true,
+    variantProps: ['Pressed', 'Size', 'State'], variantCount: 4, measuredFrom: 'variant',
+  });
+  assert.equal(classifyComponent(button, { pageName: 'Button' })?.name, 'Button');
+  assert.equal(classifyComponent(toggle, { pageName: 'Toggle' })?.name, 'Toggle');
+});
+
+test('measuring a variant set as a whole is what the capture must not do', () => {
+  // The same Button set measured at set level — 553×1126, 60 children, GRID —
+  // is the variant grid, not the component. It classified as Card. This asserts
+  // the wrong shape stays wrong, so nobody "fixes" the classifier to accept it
+  // instead of fixing the capture.
+  const grid = sig({
+    width: 553, height: 1126, childCount: 60, directChildCount: 60, totalDescendants: 372,
+    layoutMode: 'GRID', hasAutoLayout: true, cornerRadius: 5, hasFill: true, hasSolidFill: true,
+    hasStroke: true, textNodes: Array.from({ length: 8 }, () => ({ text: 'Button CTA', fontSize: 12, isBold: true })),
+    variantProps: ['Size', 'Type', 'Icon', 'State'], hasIcon: true, smallInstances: 180,
+  });
+  assert.notEqual(classifyComponent(grid, { pageName: 'Button' })?.name, 'Button');
 });
 
 test('a loose geometric rule never outranks a specific one', () => {

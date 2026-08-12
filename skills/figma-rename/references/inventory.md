@@ -255,35 +255,43 @@ function countDescendants(node, depth) {
 }
 
 function buildSignature(node, pageName) {
-  const fills = "fills" in node && Array.isArray(node.fills) ? node.fills.filter((f) => f.visible !== false) : [];
-  const strokes = "strokes" in node && Array.isArray(node.strokes) ? node.strokes.filter((s) => s.visible !== false) : [];
-  const radius = "cornerRadius" in node && typeof node.cornerRadius === "number" ? node.cornerRadius : 0;
-  // A COMPONENT_SET reads its variant properties off its first child.
-  const variantSource = node.type === "COMPONENT_SET" ? node.children[0] : node;
-  const variantProps = variantSource?.variantProperties ? Object.keys(variantSource.variantProperties) : [];
+  // A COMPONENT_SET is a grid of variants, so measuring the set measures the
+  // GRID — on a real file the Button set came back 553×1126 with 60 children and
+  // classified as "Card", while one of its variants is 129×28 with radius 8.
+  // Measure a representative variant instead; only variantProps and the variant
+  // count are facts about the set itself.
+  const isSet = node.type === "COMPONENT_SET" && "children" in node && node.children.length > 0;
+  const shape = isSet ? node.children[0] : node;
+  const variantProps = shape?.variantProperties ? Object.keys(shape.variantProperties) : [];
 
-  const signals = collectSignals(node, 3, {
+  const fills = "fills" in shape && Array.isArray(shape.fills) ? shape.fills.filter((f) => f.visible !== false) : [];
+  const strokes = "strokes" in shape && Array.isArray(shape.strokes) ? shape.strokes.filter((s) => s.visible !== false) : [];
+  const radius = "cornerRadius" in shape && typeof shape.cornerRadius === "number" ? shape.cornerRadius : 0;
+
+  const signals = collectSignals(shape, 3, {
     childTypes: [], childNames: [], smallInstances: 0,
     ...Object.fromEntries(CHILD_SIGNALS.map(([flag]) => [flag, false])),
   });
 
   return {
-    width: "width" in node ? node.width : 0,
-    height: "height" in node ? node.height : 0,
-    aspectRatio: "height" in node && node.height > 0 ? node.width / node.height : 1,
-    childCount: "children" in node ? node.children.length : 0,
-    directChildCount: "children" in node ? node.children.length : 0,
-    totalDescendants: countDescendants(node, 4),
-    layoutMode: "layoutMode" in node ? String(node.layoutMode) : "NONE",
-    hasAutoLayout: "layoutMode" in node && node.layoutMode !== "NONE",
+    width: "width" in shape ? shape.width : 0,
+    height: "height" in shape ? shape.height : 0,
+    aspectRatio: "height" in shape && shape.height > 0 ? shape.width / shape.height : 1,
+    childCount: "children" in shape ? shape.children.length : 0,
+    directChildCount: "children" in shape ? shape.children.length : 0,
+    totalDescendants: countDescendants(shape, 4),
+    layoutMode: "layoutMode" in shape ? String(shape.layoutMode) : "NONE",
+    hasAutoLayout: "layoutMode" in shape && shape.layoutMode !== "NONE",
     cornerRadius: radius,
     hasFill: fills.length > 0,
     hasSolidFill: fills.some((f) => f.type === "SOLID"),
     hasGradientFill: fills.some((f) => String(f.type).startsWith("GRADIENT")),
     hasImageFill: fills.some((f) => f.type === "IMAGE"),
     hasStroke: strokes.length > 0,
-    textNodes: collectText(node, 3),
+    textNodes: collectText(shape, 3),
     variantProps,
+    variantCount: isSet ? node.children.length : 0,
+    measuredFrom: isSet ? "variant" : "self",
     pageContext: pageName,
     ...signals,
   };
