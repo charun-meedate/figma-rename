@@ -2034,6 +2034,52 @@ test('a rename that DOES change a code spelling is never called regrouping-only'
   p.cleanup();
 });
 
+test('token-side rules written for a layer pass are called out, not ignored', () => {
+  // layer/component/componentSet read convention.components.*, so a rule in
+  // convention.rules never fires for them. The run still succeeds and the names
+  // come back merely normalized — there is nothing in the output to suggest the
+  // rule you wrote was skipped.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-layerrule-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['layer'],
+      convention: { segmentCase: 'kebab', rules: [{ match: 'Ellipse 2', to: 'indicator' }] },
+      code: { roots: ['.'], include: ['**/*.css'], exclude: [], generated: [] },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({
+      entries: [{ kind: 'layer', id: '1:1', name: 'Ellipse 2', scope: 'Button', parentId: '1:0', type: 'ELLIPSE' }],
+    }),
+  );
+  const result = run('plan.mjs', [], dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /convention\.components/);
+  assert.match(result.out, /do not apply/);
+
+  // Moved to the right block, the rule fires and the warning goes away.
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['layer'],
+      convention: { components: { segmentCase: 'kebab', rules: [{ match: 'Ellipse 2', to: 'indicator' }] } },
+      code: { roots: ['.'], include: ['**/*.css'], exclude: [], generated: [] },
+    }),
+  );
+  fs.rmSync(path.join(dir, 'rename/rename-map.json'), { force: true });
+  const fixed = run('plan.mjs', [], dir);
+  assert.equal(fixed.ok, true, fixed.out);
+  assert.doesNotMatch(fixed.out, /do not apply/);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  assert.equal(map.batches[0].renames[0].to, 'indicator');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a file-level style batch is named for the file, not the kind twice', () => {
   // Styles have no collection to group by, and the old fallback spelled the
   // kind into the id a second time: `effectStyle-effectstyle`, which is the

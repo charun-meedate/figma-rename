@@ -92,6 +92,23 @@ async function main() {
     );
   }
 
+  // component / componentSet / layer read `convention.components.*`, not the
+  // token-side block. Writing `convention.rules` for a layer pass is a silent
+  // no-op otherwise: the run succeeds, the rule never fires, and the only
+  // symptom is names that came out normalized instead of renamed.
+  const componentScoped = scoped.filter((e) => COMPONENT_KINDS.has(e.kind));
+  if (componentScoped.length && (config.convention?.rules ?? []).length) {
+    const componentRules = config.convention?.components?.rules ?? [];
+    if (componentRules.length === 0) {
+      console.log(
+        `[plan] warning: ${componentScoped.length} entry(s) in scope are ` +
+          `${[...new Set(componentScoped.map((e) => e.kind))].join('/')}, which read ` +
+          'convention.components.* — the rules in convention.rules do not apply to them. ' +
+          'Move them under convention.components.rules, or this pass will only normalize case.',
+      );
+    }
+  }
+
   // Value-based suggestions. Rules win where both have an opinion: a rule is
   // something the team decided, a suggestion is something a formula noticed.
   // Off by default unless the inventory actually carries values.

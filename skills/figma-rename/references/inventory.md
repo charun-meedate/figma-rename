@@ -384,15 +384,29 @@ reading the layer panel, not for token references).
 ```js
 const page = await figma.getNodeByIdAsync("PAGE_ID");
 await figma.setCurrentPageAsync(page);
-const set = page.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPONENT"] })
+const found = page.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPONENT"] })
   .find(n => n.name === "Button");
+if (!found) throw new Error("No component by that name on this page");
+
+// Skip anything inside an INSTANCE. Figma *lets* you rename those — verified,
+// it does not throw — but the rename lands as a per-instance override instead
+// of on the component the layer actually belongs to. Rename it in its own
+// source component and every instance follows. On a real button set this was
+// the difference between 312 entries and 132: 180 of them were nested icon
+// internals that no one should be renaming from here.
+const insideInstance = (n) => {
+  let p = n.parent;
+  while (p && p.id !== found.id) { if (p.type === "INSTANCE") return true; p = p.parent; }
+  return false;
+};
+
 return {
-  entries: set.findAll(n => n.type !== "COMPONENT").map(n => ({
+  entries: found.findAll(n => n.type !== "COMPONENT" && !insideInstance(n)).map(n => ({
     kind: "layer",
     id: n.id,
     name: n.name,
-    scope: set.name,
-    parentId: set.id,
+    scope: found.name,
+    parentId: found.id,
     pageId: page.id,
     type: n.type,
   })),
@@ -402,6 +416,14 @@ return {
 Scope this to one component per pass. A whole-file layer inventory is thousands
 of entries, most of them named `Frame 427`, and no convention can decide what
 those should be called.
+
+**Expect duplicate names, and do not filter them out.** Each variant in a set is
+its own component with its own layer tree, so 60 variants of a button gave 132
+layers carrying 3 distinct names. Renaming only one variant's `Text` layer would
+leave the other 59 disagreeing, which is worse than not renaming at all — so
+every copy needs its own row, each with its own id. They are not 132 questions:
+`review.mjs accept --batch <id> --rule <rule>` decides the whole group at once,
+which is exactly what that command is for.
 
 ## Modes
 

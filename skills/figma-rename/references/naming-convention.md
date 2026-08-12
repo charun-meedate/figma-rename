@@ -163,6 +163,16 @@ Applying the *token* `structure` to them is what used to send every component to
 `needsReview`, because `Button` is one segment and "button" is not a token
 category. `references/components.md` covers the classifier.
 
+### Layers read the components block too
+
+`component`, `componentSet` **and `layer`** all take their rules from
+`convention.components.*`. A rule written in the token-side `convention.rules`
+never fires for them — the run succeeds and the names come back merely
+normalized, which looks like the rule disagreeing with you rather than never
+being consulted. `plan.mjs` says so when it sees that combination, but the
+shorter version is: if the batch is components or layers, the rules belong under
+`components`.
+
 ## Scoping the pass
 
 Two lists keep a pass small enough to review:
@@ -196,6 +206,8 @@ one-word token like `brand` or `mystery` has no mechanical correct answer:
 without `structure` the script would confidently normalise it to `brand` and
 report success, and the pass would silently leave the exact names that needed a
 decision untouched and unflagged.
+
+
 
 ## Recording it for next time
 

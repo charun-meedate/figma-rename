@@ -166,7 +166,7 @@ convention ที่ copy ไปไว้ในแต่ละโปรเจก
 มีสองอย่างที่ต้องผ่าน และเป็นคนละเรื่องกัน:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 160 เคส — สคริปต์ยังถูก
+node skills/figma-rename/scripts/selftest.mjs     # 161 เคส — สคริปต์ยังถูก
 ```
 
 กับ **eval** ใน `skills/figma-rename/evals/` ซึ่งทดสอบว่า *agent เดินกระบวนการถูก* —
