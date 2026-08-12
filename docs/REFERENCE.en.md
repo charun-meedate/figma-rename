@@ -76,10 +76,17 @@ naming rules live in one file that every project extends:
 }
 ```
 
-The merge is shallow, block by block — a child's `convention.rules` are
-**appended** to the parent's, every other key overrides. Each rule is tagged
-with the file it came from, so a rule that fails to compile names its source
-file rather than just `rules[3]`.
+The merge is shallow, block by block, and **arrays replace rather than append**.
+A project that writes its own `convention.rules` loses the shared file's rules
+entirely — they are not added to. That is deliberate: "these, not those" has to
+be sayable, and appending silently would keep alive the very rules a project was
+trying to drop, which reads as the shared standard misbehaving.
+
+The consequence worth knowing: **do not write a partial `rules` list in a
+project.** Adding one rule means restating all of them, at which point you have
+copied the convention into the project after all. Add it to the shared file
+instead. Each rule is tagged with the file it came from, so a rule that fails to
+compile names its source file rather than just `rules[3]`.
 
 Presets included: `starter` (permissive, right for a first file) and `aurora`
 (strict, with a full component vocabulary). Drop your team's preset into

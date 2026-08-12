@@ -178,6 +178,28 @@ return { stale };
 
 
 
+## What a component rename touches in code
+
+A component rename has one code spelling: the Figma path itself (`figmaPath`).
+It is matched at a boundary, which means it catches a **bare** reference and
+deliberately does not catch a path-prefixed one:
+
+```
+"Buttons/Button"              caught — a Figma path, e.g. in a Code Connect map
+see Buttons/Button in Figma   caught — prose in a doc or comment
+"./Buttons/Button"            NOT caught — a filesystem path that happens to read alike
+"src/ui/Buttons/Button"       NOT caught — same reason
+```
+
+That is intentional. A Figma component path and an import path are different
+namespaces, and renaming a component in Figma is not a reason to move a source
+file. So `check --after` can report OK while the string `Buttons/Button` is still
+visible in an import — the string is there, the *reference* is not.
+
+Verified live: a component-set rename applied and reversed cleanly on a real
+file, with all 60 variant children untouched. Variant children keep their
+`Property=Value` names because those are variant assignments, not names.
+
 ## The structural classifier
 
 A token can be named from its value. A component cannot — but its *shape* is
