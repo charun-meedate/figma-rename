@@ -196,7 +196,7 @@ Full detail — tables, thresholds, known limits — is in
 
 ## Test status
 
-`node skills/figma-rename/scripts/selftest.mjs` — 162 cases, all passing.
+`node skills/figma-rename/scripts/selftest.mjs` — 163 cases, all passing.
 Covers convention rules and templates, boundary guards (`--text-primary` must
 not match inside `--text-primary-default`; `.primaryDefault` only after a dot),
 chains and swaps replaced simultaneously, all four `check` refusals (stale map /
@@ -240,7 +240,7 @@ skills/figma-rename/
     ├── check.mjs                refuses a map that would break (+ --code, --after)
     ├── emit-figma.mjs           batch → a script for use_figma (+ --reverse)
     ├── apply-code.mjs           codemod across the repo (dry-run by default)
-    ├── selftest.mjs             162 cases
+    ├── selftest.mjs             163 cases
     ├── rename.config.example.json
     └── lib/
         ├── suggest.mjs          value → name (colour / number) + calibration

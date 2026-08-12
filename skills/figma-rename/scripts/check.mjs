@@ -236,6 +236,18 @@ async function main() {
     );
   }
 
+  // The rollback story this skill tells is "one batch, one commit, git revert".
+  // Nothing ever checked that the project is in git at all — and a real run
+  // landed 20 renames in a shared Figma file from a plain folder, leaving the
+  // reverse script and an unversioned rename-map as the only way back.
+  if (!(await inGitWorkTree(config.rootDir))) {
+    warnings.push(
+      'this project is not in a git repository, so "one batch = one commit" does not hold here. ' +
+        'Rolling back means running emit-figma --reverse and keeping rename/rename-map.json — ' +
+        'if that file is lost, the renames cannot be undone. `git init` first if you can.',
+    );
+  }
+
   if (args.code) await reportCodeHits(config, renames, warnings, allTokenNames, args['no-namespace-classes']);
 
   report(errors, warnings, `${renames.length} rename(s) checked`);
@@ -369,3 +381,19 @@ main().catch((err) => {
   console.error(`[check] ${err.message}`);
   process.exit(1);
 });
+
+/** True when `dir` is inside a git work tree. Walks up rather than shelling out. */
+async function inGitWorkTree(dir) {
+  let current = path.resolve(dir);
+  for (;;) {
+    try {
+      await fs.stat(path.join(current, '.git'));
+      return true;
+    } catch {
+      /* keep walking */
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+}

@@ -226,6 +226,7 @@ works only because one batch is exactly one commit.
 | `has pending decisions` | something in the batch has not been accepted or rejected yet | answer them — the script will not ship an undecided name |
 | `planned under a different convention` | the rules changed after this plan was made | re-plan; the decisions you already made survive |
 | `another batch is in flight` | the previous batch never finished | finish it first — two in flight means neither can be rolled back |
+| `not in a git repository` | `git revert` is not available, so a batch cannot be undone that way | `git init` if you can; if not, guard `rename/rename-map.json` — losing it means losing the way back |
 | `Ambiguous rewrite` | generated class names collide — common when renaming `colors/**` | if the project has no generated Dart, add `--no-namespace-classes`; the error says so |
 | `cssPrefix mismatch` | the prefix here disagrees with `tokens.config.json` | make them agree, or the generated code and the codemod will use different names |
 | `namespace splits into…` | one group split into several, so no single new class name is right | let the compiler point at the call sites |

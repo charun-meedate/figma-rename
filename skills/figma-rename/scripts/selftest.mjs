@@ -2034,6 +2034,41 @@ test('a rename that DOES change a code spelling is never called regrouping-only'
   p.cleanup();
 });
 
+test('check says so when the project is not in git', () => {
+  // The rollback story is "one batch, one commit, git revert" — stated in the
+  // manual, the README and SKILL.md — and nothing verified the precondition.
+  // A real run applied 20 renames to a shared Figma file from a plain folder.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-nogit-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['variable'],
+      convention: { segmentCase: 'kebab', rules: [{ match: 'colors/**', to: 'palette/$1' }] },
+      code: { roots: ['.'], include: ['**/*.css'], exclude: [], generated: [] },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({ entries: [{ kind: 'variable', id: 'V1', name: 'colors/red/500', scope: 'S', resolvedType: 'COLOR' }] }),
+  );
+  fs.writeFileSync(path.join(dir, 'src/a.css'), '.a{color:var(--colors-red-500)}\n');
+  run('plan.mjs', [], dir);
+
+  const loose = run('check.mjs', [], dir);
+  assert.equal(loose.ok, true, 'it is a warning, not a refusal — the work is still legitimate');
+  assert.match(loose.out, /not in a git repository/);
+
+  // os.tmpdir() is not inside a work tree, so a .git here is the only signal.
+  fs.mkdirSync(path.join(dir, '.git'));
+  const versioned = run('check.mjs', [], dir);
+  assert.equal(versioned.ok, true, versioned.out);
+  assert.doesNotMatch(versioned.out, /not in a git repository/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a component named only by the classifier does not crash the plan', () => {
   // `result.to` is null when the convention had no opinion and the name came
   // from the classifier — the normal path for a component. Building the code

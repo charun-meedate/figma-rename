@@ -209,6 +209,7 @@ Claude จะทำทีละ batch วนแบบนี้จนครบ:
 | `has pending decisions` | มีตัวที่ยังไม่ได้ตอบว่าเอาหรือไม่เอา | ตอบให้ครบก่อน — สคริปต์ไม่ยอมยิงของที่ยังไม่ตัดสิน |
 | `planned under a different convention` | กฎถูกแก้หลังวางแผนไว้แล้ว แผนเก่าจึงไม่ตรงกฎใหม่ | ให้วางแผนใหม่ สิ่งที่ตัดสินไปแล้วไม่หาย |
 | `another batch is in flight` | batch ก่อนหน้ายังค้างกลางทาง | ทำอันเก่าให้จบก่อน — สองก้อนพร้อมกันแปลว่าย้อนไม่ได้ทั้งคู่ |
+| `not in a git repository` | ย้อนกลับด้วย `git revert` ไม่ได้ เพราะโปรเจกต์ไม่ได้อยู่ใน git | `git init` ก่อนถ้าทำได้ ถ้าไม่ได้ ต้องเก็บ `rename/rename-map.json` ไว้ให้ดี — หายเมื่อไหร่คือย้อนไม่ได้ |
 | `Ambiguous rewrite` | ชื่อ class ที่ generator สร้างชนกัน (เจอบ่อยตอน rename `colors/**`) | ถ้าโปรเจกต์ไม่มีโค้ด Dart ให้เติม `--no-namespace-classes` ข้อความ error บอกไว้แล้ว |
 | `cssPrefix mismatch` | prefix ที่ตั้งไว้ที่นี่ไม่ตรงกับ `tokens.config.json` | แก้ให้ตรงกัน ไม่งั้นโค้ดที่ generate ออกมาจะคนละชื่อกับที่ codemod แก้ |
 
