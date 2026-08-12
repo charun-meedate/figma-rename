@@ -8,7 +8,7 @@
 ## Contents
 
 - Where the scripts live
-- Step 0 — agree the scope and the convention before touching anything
+- Step 0 — ask, at every point where there is a choice
 - Step 1 — inventory: what is actually in the file
 - Step 2 — plan: propose, do not decide
 - Step 3 — check: refuse before applying
@@ -57,12 +57,13 @@ which reads like a broken tool when it is only a wrong path.
 S=".claude/skills/figma-rename/scripts"
 
 # or the skill repo checked out next to the project
-S="../design-tokens-skill/skills/figma-rename/scripts"
+S="../figma-rename/skills/figma-rename/scripts"
 
 # or installed for the user only
 S="$HOME/.claude/skills/figma-rename/scripts"
 
-node "$S/check.mjs" --help 2>/dev/null || node "$S/plan.mjs" --dry-run   # confirm the path resolves
+# Confirms the path AND that the config is readable, in one command.
+node "$S/plan.mjs" --print-config
 ```
 
 Everything the scripts read or write — `rename.config.json`, `inventory.json`,
@@ -80,6 +81,10 @@ answers "whatever you think" has at least been told what they are getting.
 Use `AskUserQuestion`, one round at a time, recommendation first and marked
 `(recommended)`. Never ask an abstract question when you could ask it with the
 user's own names in front of them.
+
+**Ask in the language the user is writing in.** This manual is in English; most
+of the people running it are not. A question they have to translate before they
+can answer is a question that gets "whatever you think".
 
 ### Round 1 — is there already a standard?
 
@@ -123,38 +128,80 @@ as what they actually produce:
 
 ```
 now                        kebab                    camel
-color/bg-raised         →  color/surface/raised     colorSurfaceRaised
-palette/red/500         →  palette/red/500          paletteRed500
+color/bg-raised         →  color/surface/raised     color/surfaceRaised
+palette/red/500         →  palette/red/500          palette/red/500
 ```
+
+(Case applies per segment, so the slashes stay. `colorSurfaceRaised` is the CODE
+spelling that `figma-token-export` derives — it is not an option for the Figma
+name, and offering it as one invites a file named the way the code is.)
 
 Ask only about what this file actually needs — never offer a menu of options
 the file has no examples of:
 
-- **case per segment** — kebab, camel, Pascal, snake
-- **prefix** — anything to strip (`palette/`), anything to add (`primitive/`)
-- **separator** — only if the file mixes `-` and `/` for hierarchy
-- **number scale** — `spacing/md` or `spacing/4`, only if the file has one
+| ask about | where the answer goes |
+|---|---|
+| **case per segment** — kebab, camel, Pascal, snake | `convention.segmentCase` |
+| **prefix** — strip `palette/`, add `primitive/` | `convention.transform.stripPrefix` / `.addPrefix` |
+| **separator** — only if the file mixes `-` and `/` for hierarchy | `convention.transform.separator` |
+| **number scale** — `spacing/md` or `spacing/4` | `convention.sizeNaming` |
 
-All four are `convention.transform`; none of them needs a glob rule. If an
-answer differs from the shared standard, say so out loud — it is either a
+None of them needs a glob rule. The two `transform` ones also take
+`stripSuffix` and `replace` (whole-segment find/replace). Getting the block
+wrong used to be silent — a string where an array belongs did nothing at all —
+so it is validated now and says which key you meant.
+
+If an answer differs from the shared standard, say so out loud: it is either a
 project exception worth writing down, or a change the standard should absorb.
 
-### Round 4 — how much guessing is allowed
+### Round 4 — the review, which is the one part only a person can do
 
-Once the plan exists, show the counts and ask **"how confident do the
-suggestions need to be?"** with one real `low` row, so the question is concrete:
+`emit-figma` refuses a batch with undecided rows, so this round is not optional
+and cannot be skipped by saying yes to something else. **You are the checkbox
+UI**: read the full list, group it, and record every answer through
+`review.mjs` — never by editing the JSON, which a re-plan would overwrite.
+
+```bash
+node "$S/review.mjs" status                     # what is open
+node "$S/review.mjs" list --batch <id> --json   # every row, untruncated
+```
+
+Group before asking. Three hundred rows collapse into a handful of questions:
+
+- **by rule** — "28 rows come from `color/text-* → text/$1/default`; here are 3
+  of them. Accept the group?" A rule is a decision the team already made, so the
+  question is whether the rule did what they meant, asked once.
+  → `review.mjs accept --batch <id> --rule "<rule>"`
+- **by confidence tier** — high as one group; medium in chunks with samples;
+  **low one at a time**, because those are the guesses.
+  → `review.mjs accept --batch <id> --min-confidence high`
+- **the open questions, individually.** These are the ones no formula could
+  answer, and they are the reason this round exists:
 
 ```
-Variable 3 -> opacity/50  [low]  value 0.5 is in the 0–1 range
+Color 5      alias of colors/blue/500 — a semantic token, so its name is its ROLE
+             (brand? error? surface?), which the value cannot tell you
+Color 1      same value as "primary" — both would be colors/blue/500
+brand        1 segment, minSegments is 2
+btn primary  its shape reads as "Button", and so does "Button/Primary"
 ```
 
-Recommend `--min-confidence medium` for a first run.
+Ask each one plainly, offer what you would pick, then record it:
+
+```bash
+node "$S/review.mjs" resolve <id> --to palette/brand      # answer it
+node "$S/review.mjs" skip <id> --note "brand is fine"     # leave it alone, permanently
+node "$S/review.mjs" set-to <id> --to <name>              # fix a proposal
+node "$S/review.mjs" reject --batch <id> --ids A,B        # not this one
+```
+
+Skips and hand-written names survive re-planning; a deleted JSON row does not.
 
 ### Round 5 — before applying
 
 **"Start with this batch?"** Name the batch, its size, and what will happen:
-Figma, then regenerate, then code, then one commit. Confirm the project is on a
-branch with a clean tree.
+Figma, then re-capture dumps, then regenerate, then code, then one commit.
+Confirm the project is on a branch with a clean tree.
 
 ### Say where the run is going
 

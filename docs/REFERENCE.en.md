@@ -133,7 +133,7 @@ Full detail — tables, thresholds, known limits — is in
 
 ## Test status
 
-`node skills/figma-rename/scripts/selftest.mjs` — 84 cases, all passing.
+`node skills/figma-rename/scripts/selftest.mjs` — 150 cases, all passing.
 Covers convention rules and templates, boundary guards (`--text-primary` must
 not match inside `--text-primary-default`; `.primaryDefault` only after a dot),
 chains and swaps replaced simultaneously, all four `check` refusals (stale map /
@@ -152,9 +152,9 @@ Scripts printed by `emit-figma.mjs` are parsed as an async function body on
 every branch (plain / staged / code-syntax / node+page), so a syntax error
 never reaches Figma.
 
-Not yet run against a real production Figma file — the Figma side is tested to
-the level of "the generated script is correct and parses". The codemod is
-tested against real files in a temp project.
+Verified against a real Figma file: 1,148 variables read, one renamed, then
+reversed. Fourteen semantic tokens still pointed at the renamed variable
+afterwards — the claim this whole skill rests on, measured rather than assumed.
 
 ## Skill layout
 
@@ -177,7 +177,7 @@ skills/figma-rename/
     ├── check.mjs                refuses a map that would break (+ --code, --after)
     ├── emit-figma.mjs           batch → a script for use_figma (+ --reverse)
     ├── apply-code.mjs           codemod across the repo (dry-run by default)
-    ├── selftest.mjs             84 cases
+    ├── selftest.mjs             150 cases
     ├── rename.config.example.json
     └── lib/
         ├── suggest.mjs          value → name (colour / number) + calibration

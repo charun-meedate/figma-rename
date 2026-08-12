@@ -25,7 +25,7 @@ can read together, and the thing that makes the change explainable later.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "fileKey": "abc123…",
   "convention": { "…echo of the config that produced this…" },
   "batches": [
@@ -33,15 +33,16 @@ can read together, and the thing that makes the change explainable later.
       "id": "variable-2-semantic",
       "kind": "variable",
       "scope": "2. Semantic",
-      "bucket": "variable:2. Semantic",
       "pageId": null,
+      "status": "planned",
       "renames": [
         {
           "id": "VariableID:1:23",
           "from": "color/text-primary",
           "to": "text/primary/default",
           "source": "rule",
-          "rule": "color/text-* -> text/$1/default"
+          "rule": "color/text-* -> text/$1/default",
+          "decision": "accepted"
         },
         {
           "id": "VariableID:1:31",
@@ -49,7 +50,8 @@ can read together, and the thing that makes the change explainable later.
           "to": "spacing/md",
           "source": "generic",
           "reason": "collection \"Spacing\"; scope GAP; value 16 is a multiple of 4",
-          "confidence": "high"
+          "confidence": "high",
+          "decision": "pending"
         }
       ]
     }
@@ -78,6 +80,9 @@ can read together, and the thing that makes the change explainable later.
 | `batches[].kind` | yes | `variable`, `component`, `componentSet`, `layer`, `textStyle`, `effectStyle`, `paintStyle` |
 | `batches[].scope` | no | collection or page name — what the batch was grouped by |
 | `batches[].pageId` | no | node kinds only; `emit-figma.mjs` emits the page switch from it |
+| `batches[].status` | no | `planned` → `figma-applied` → `applied`. Defaults to `planned`; only `review.mjs mark` moves it |
+| `renames[].decision` | no | `pending` / `accepted` / `rejected`. Defaults to `pending`, and `emit-figma` refuses a batch that still has any |
+| `conventionHash` | no | fingerprint of the convention this was planned under; `check.mjs` refuses a mismatch |
 | `renames[].id` | yes | the Plugin API id. The rename is applied to **this**, not to the name |
 | `renames[].from` | yes | the current name. Validated against the inventory *and* against Figma at apply time |
 | `renames[].to` | yes | the new name |
@@ -182,3 +187,54 @@ hand-edited map and a half-applied rename.
 - **No results.** What actually landed is the `use_figma` return value; put
   that in the commit message. A file that records both intent and outcome
   invites the two to disagree.
+
+## The lifecycle, and why it is in this file
+
+```
+planned ──emit-figma + use_figma──▶ figma-applied ──apply-code + check──▶ applied
+   │                                     │                                  │
+   └── editable, re-plannable            └── Figma is ahead of the code      └── commit
+```
+
+Only `review.mjs mark` moves a batch, one step at a time, and the flip lands
+**inside that batch's commit**. So `git revert` on the commit restores the status
+at the same moment it restores the code — lifecycle state and code state cannot
+disagree across a revert, which is what makes "one batch = one commit = one
+rollback" a property rather than a habit.
+
+A side journal (`rename/applied.json`) would have done the same job only if
+everyone remembered to stage it. And since re-planning has to merge human edits
+regardless, the journal's one advantage — letting plan overwrite freely — was
+never real.
+
+**`status` is not an outcome log.** What actually happened in Figma is the
+`use_figma` return value, and that belongs in the commit message.
+
+## What re-planning keeps
+
+`plan.mjs` merges; it does not overwrite. Keyed by Figma id, because names are
+exactly what is in motion:
+
+| in the old map | after a re-plan |
+|---|---|
+| a batch that reached Figma | copied through byte-for-byte, id never reused |
+| `rejected`, same target | still rejected, note intact |
+| a hand-written name (`source: human`) | wins over the fresh proposal |
+| `accepted`, but the convention now proposes something else | back to `pending`, with a note saying what it was |
+| a `skip`ped open question | never raised again |
+
+`--fresh` discards pending decisions. Nothing discards an applied batch.
+
+## Editing it by hand: don't
+
+Every field above is written by a tool, and `review.mjs` is the only writer of
+`decision` and `status`. Hand-edits are not forbidden — it is JSON — but a
+re-plan reconciles against decisions, and a row you deleted is a row the next
+plan proposes again. Rejecting it records the answer; deleting it does not.
+
+```bash
+node "$S/review.mjs" reject  --batch <id> --ids V1 --note "keep the old name"
+node "$S/review.mjs" set-to  V2 --to text/brand/default
+node "$S/review.mjs" resolve V3 --to palette/brand
+node "$S/review.mjs" skip    V4 --note "brand is fine as it is"
+```

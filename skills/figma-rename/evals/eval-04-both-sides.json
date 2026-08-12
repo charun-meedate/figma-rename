@@ -10,11 +10,12 @@
   ],
   "expected_behavior": [
     "ใช้สคริปต์ที่ emit-figma.mjs สร้าง ไม่เขียน use_figma script เอง — id 40 คู่ที่พิมพ์ผิดหนึ่งตัวคือเปลี่ยนชื่อผิดตัวโดยไม่มี error",
-    "รัน apply-code.mjs แบบ dry run ก่อนเสมอ แล้วอ่านรายการ 'matched nothing' ออกมา ไม่ใช่ --write ทันที",
-    "regenerate ไฟล์ token ก่อน codemod ไม่ใช่หลัง — และไม่ commit ระหว่างที่ tree ยัง compile ไม่ผ่าน",
-    "รัน check.mjs --after แล้ว build/test ให้ผ่านทั้งคู่ก่อน commit",
-    "รายงานว่า namespace ที่แตกเป็นหลายปลายทางจะไม่ถูก rename class ให้ และปล่อยให้ compiler ชี้เอง แทนที่จะไปแก้เดา ๆ",
-    "commit เฉพาะ batch นี้ พร้อมแปะผลลัพธ์ที่ use_figma คืนมา ไม่รวบหลาย batch เป็น commit เดียว"
+    "หลัง use_figma สำเร็จ ต้อง review.mjs mark <id> --figma-applied ไม่งั้น apply-code จะปฏิเสธ",
+    "**re-capture dumps จาก Figma ก่อน** แล้วค่อย sync.mjs — dumps เก่าจะ regenerate ชื่อเดิมกลับมาแบบเงียบ ๆ",
+    "รัน apply-code.mjs แบบ dry run ก่อนเสมอ แล้วอ่านรายการ 'matched nothing' ออกมา",
+    "รัน check.mjs --after แล้ว build/test ให้ผ่านทั้งคู่ ก่อน mark --applied และ commit",
+    "รายงานว่า namespace ที่แตกเป็นหลายปลายทางจะไม่ถูก rename class ให้ และปล่อยให้ compiler ชี้เอง",
+    "commit เฉพาะ batch นี้ พร้อมผลลัพธ์ที่ use_figma คืนมา — map อยู่ใน commit ด้วย เพื่อให้ revert คืนสถานะได้"
   ],
-  "baseline_failure": "codemod ก่อนแล้วค่อย regenerate หรือลืม regenerate ไปเลย — consumer ชี้ไปชื่อใหม่ แต่ tokens.css ยังเป็นชื่อเก่า build พังแบบหาต้นตอยาก หรือไม่ก็ commit ตอนที่ยัง compile ไม่ผ่านแล้วบอกว่าเสร็จแล้ว"
+  "baseline_failure": "รัน sync.mjs ด้วย dumps ชุดเดิมที่ดึงมาก่อน rename — ได้ tokens.css ที่เป็นชื่อเก่า แล้ว check --after ไปรายงานว่าไฟล์ generated ค้าง โดยไม่มีอะไรชี้ว่าต้นเหตุคือ dumps หรือไม่ก็ codemod ก่อน regenerate"
 }

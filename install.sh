@@ -88,6 +88,13 @@ cat <<EOF
 Next:
   cp "$DEST_DIR/figma-rename/scripts/rename.config.example.json" "$TARGET_ROOT/rename.config.json"
 
-Edit that file — the naming convention lives there — then ask for the rename in
-Claude Code (or run /figma-rename).
+Point it at your team's standard and override only this repo's facts:
+
+  { "extends": "aurora",              // or "../design-system/naming.json"
+    "figma": { "fileKey": "…" },
+    "code":  { "cssPrefix": "", "flutterPrefix": "App" } }
+
+The naming rules belong in the file you extend, not in this one — a convention
+copied into every project is several standards that agree today. Then ask for
+the rename in Claude Code.
 EOF

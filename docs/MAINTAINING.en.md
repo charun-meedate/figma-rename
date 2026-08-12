@@ -162,7 +162,7 @@ because "clean consumers but a stale `tokens.css`" means someone skipped step 2.
 Two things have to pass, and they check different things:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 84 cases — the scripts are right
+node skills/figma-rename/scripts/selftest.mjs     # 150 cases — the scripts are right
 ```
 
 and the **evals** in `skills/figma-rename/evals/`, which check that the *agent

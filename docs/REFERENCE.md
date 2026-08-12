@@ -115,7 +115,7 @@ Variable 3   -> opacity/50       [low]    0.5 อยู่ในช่วง 0�
 
 ## สถานะการทดสอบ
 
-`node skills/figma-rename/scripts/selftest.mjs` — 84 เคส ผ่านหมด ครอบคลุม
+`node skills/figma-rename/scripts/selftest.mjs` — 150 เคส ผ่านหมด ครอบคลุม
 convention/rule template, boundary guard (`--text-primary` ต้องไม่ไปโดน
 `--text-primary-default`, `.primaryDefault` ต้องโดนเฉพาะหลังจุด), chain กับ swap
 ที่ต้องแทนที่พร้อมกัน, การ refuse ทั้ง 4 แบบของ check (map เก่า / ชื่อซ้ำ / identifier ชน /
@@ -130,8 +130,9 @@ hue wrap รอบ 0/360, alpha suffix, ลำดับสัญญาณขอ�
 สคริปต์ที่ `emit-figma.mjs` พิมพ์ออกมาถูก parse เป็น async function body ทุกสาขา
 (ปกติ / staged / code-syntax / node+page) — syntax error จะไม่ไปโผล่ตอนยิงเข้า Figma
 
-ยังไม่ได้ยิงกับไฟล์ Figma production จริง — ฝั่ง Figma ทดสอบถึงระดับ "สคริปต์ที่ generate
-ออกมาถูกต้องและ parse ได้" เท่านั้น ส่วน codemod ทดสอบกับไฟล์จริงใน temp project
+ทดสอบกับไฟล์ Figma จริงแล้ว — อ่าน variable 1,148 ตัว, rename 1 ตัว แล้ว reverse กลับ
+ตอน rename มี semantic token อ้างถึงตัวนั้นอยู่ 14 ตัว ไม่พังสักตัว ซึ่งเป็นข้ออ้างที่ skill ทั้งตัว
+ตั้งอยู่บนมัน — ตอนนี้วัดแล้ว ไม่ใช่แค่เชื่อ
 
 ## โครงสร้าง skill
 
@@ -151,13 +152,16 @@ skills/figma-rename/
 ├── evals/                       ชุดทดสอบพฤติกรรม 4 อัน
 └── scripts/
     ├── plan.mjs                 inventory + convention + suggest → rename-map.json (ข้อเสนอ)
+    ├── review.mjs               ตัดสิน accept/reject/resolve + เลื่อนสถานะ batch
     ├── check.mjs                ปฏิเสธ map ที่จะพัง (+ --code, --after)
     ├── emit-figma.mjs           batch → สคริปต์สำหรับ use_figma (+ --reverse)
     ├── apply-code.mjs           codemod ทั้ง repo (dry-run เป็น default)
-    ├── selftest.mjs             84 เคส
+    ├── selftest.mjs             150 เคส
     ├── rename.config.example.json
     └── lib/
         ├── suggest.mjs          value → ชื่อ (สี/ตัวเลข) + calibration
+        ├── classify.mjs         โครงสร้าง component → ชนิด (Button/Modal/…)
+        ├── handoff.mjs          cross-check กับ tokens.config.json
         ├── convention.mjs       rule + normalizer
         ├── codemod.mjs          การสะกดในโค้ด + การแทนที่พร้อมกัน
         └── …

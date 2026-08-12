@@ -28,8 +28,8 @@ Figma ผูกด้วย id    →  เปลี่ยนชื่อแล�
 2. ติดตั้ง skill ลงโปรเจกต์:
 
 ```bash
-git clone <url-ของ-repo-นี้> ~/dev/design-tokens-skill
-~/dev/design-tokens-skill/install.sh ~/dev/my-project --skill figma-rename
+git clone <url-ของ-repo-นี้> ~/dev/figma-rename
+~/dev/figma-rename/install.sh ~/dev/my-project
 ```
 
 3. **โปรเจกต์ต้องอยู่ใน git และไม่มีของค้าง** — skill จะ commit ให้ทีละ batch

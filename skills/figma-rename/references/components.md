@@ -92,7 +92,13 @@ Scope a layer pass to **one component at a time**. A whole-file layer inventory
 is mostly `Frame 427` and `Group 12`, which no convention can decide; those
 belong in `needsReview`, not in a rule.
 
-## 3. Component names in code
+## 3. What a shape can say, and what it cannot
+
+A component's **name** can now be argued from its structure — see the classifier
+section below. Its **code symbol** still cannot, and that distinction is the
+whole of this section.
+
+## 4. Component names in code
 
 This is the one place where the derivation is a guess, and the skill refuses to
 make it.
@@ -167,3 +173,72 @@ const stale = page.findAllWithCriteria({ types: ["INSTANCE"] })
   .map(n => ({ id: n.id, name: n.name }));
 return { stale };
 ```
+
+## The structural classifier
+
+A token can be named from its value. A component cannot — but its *shape* is
+evidence, and a table of rules can read it:
+
+```
+Component 7   →  Modal    [high]    Structure: 400×320, 2 text node(s)
+btn primary   →  Button   [medium]  Structure: 120×40, radius 8, 1 text node — also matched Tag
+thing 9       →  (nothing)          no captured shape; spelling only
+```
+
+Three steps, and the first is the one people miss:
+
+1. **Capture a signature.** `references/inventory.md` has the script — about
+   thirty fields per component: geometry, layout, fills, strokes, corner radius,
+   child names and types, text nodes, variant properties. Without it the
+   classifier has nothing to read and `plan.mjs` says so rather than staying
+   quiet.
+2. **Classify.** 50 rules, priority-ordered, ported test-for-test from the team's
+   Figma plugin. Each match carries the evidence and the runners-up, because when
+   several rules fire the winner is a ranking, not a fact.
+3. **Review.** Same path as any other suggestion: `review.mjs` shows the reason
+   and the confidence, and nothing ships undecided.
+
+### What it will not do
+
+- **No name at all when nothing matches.** The plugin answered `Small Element`,
+  `Bar Element` or `Component` here. Those read as answers in a list of two
+  hundred, and they are not names.
+- **Confidence follows the priority band.** `Container` — any auto-layout frame
+  with more than five descendants, which is most frames — cannot come back
+  looking as certain as `Modal`.
+- **The label does not go in the name.** The plugin prefixed the first text node,
+  so a button reading "Save" became `Save Button`. That is instance content: the
+  next designer writes a different label and the name is a lie.
+  `classifier.includeTextHint` turns it back on for libraries whose labels are
+  identities rather than copy.
+- **Two components that read alike go to review**, with each other's evidence
+  attached. `Button 1` and `Button 2` tell nobody which is which.
+
+### Tuning it without forking the skill
+
+The priorities are data, and they live in the shared standard rather than in the
+installed JS — otherwise tuning them means editing a file the next `install.sh`
+overwrites, which is the fork `extends` exists to prevent.
+
+```json
+"components": {
+  "classifier": {
+    "minConfidence": "medium",
+    "priorities": { "Tooltip": 120 },
+    "disable": ["Container"],
+    "pageHints": { "sheet": "Modal" },
+    "includeTextHint": false
+  }
+}
+```
+
+A `priorities` key naming a rule that does not exist is refused, with the list of
+real ones — a typo there would otherwise be a silent no-op.
+
+**Three priorities were already changed** on the way across from the plugin, each
+the same mistake: a rule testing GEOMETRY sat at the same priority as one testing
+NAME evidence, so the loose shape description outranked the specific rule under
+it. Every small labelled button classified as `Tooltip`, every ghost button as
+`Text Input`, every numeric badge as `Radio Button` — each at a confidence that
+read as certain. If a library disagrees with the corrections, `priorities` moves
+them back.

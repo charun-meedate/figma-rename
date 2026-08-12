@@ -14,8 +14,17 @@
   "$comment_kinds": "Narrow this per run rather than renaming everything at once.",
   "kinds": ["variable"],
 
-  "$comment_convention": "Only what THIS project differs on. An empty block here is the healthy case — it means the project follows the standard. Anything you add is an exception someone will have to justify later.",
-  "convention": {},
+  "$comment_convention": "Only what THIS project differs on. An empty block here is the healthy case — it means the project follows the standard. Anything you add is an exception someone will have to justify later. The block below shows the shape; delete it unless you need it.",
+  "convention": {
+    "$comment_transform": "The plain operations, for when a glob rule is more machinery than the job needs. Runs after any matching rule. Idempotent, and it will not strip a name to nothing. NOTE: case is `segmentCase` and the number scale is `sizeNaming` — neither belongs in here.",
+    "$example_transform": {
+      "separator": { "from": "-", "to": "/" },
+      "stripPrefix": ["palette"],
+      "stripSuffix": ["default"],
+      "addPrefix": "primitive",
+      "replace": [{ "find": "btn", "with": "button" }]
+    }
+  },
 
   "code": {
     "$comment": "Facts about this repo, not naming decisions — these belong here rather than in the shared standard.",
@@ -23,7 +32,7 @@
     "include": ["**/*.{ts,tsx,js,jsx,css,scss,dart,kt,swift,json,md}"],
     "exclude": ["**/node_modules/**", "**/.git/**", "**/build/**", "**/.dart_tool/**", "**/dist/**"],
 
-    "$comment_generated": "Rebuilt by figma-token-export — the codemod skips them because regenerating overwrites them anyway.",
+    "$comment_generated": "Rebuilt by figma-token-export — the codemod skips them because regenerating overwrites them anyway. EMPTY THIS if the project has no generator, or the codemod will skip exactly the files that need renaming. check.mjs cross-checks it against tokens.config.json targets[].out.",
     "generated": ["src/tokens/**", "lib/tokens/**"],
 
     "$comment_prefix": "MUST match this project's tokens.config.json. Wrong here means the codemod matches nothing and silently does no work.",

@@ -1,6 +1,6 @@
 ---
 name: figma-rename
-description: Rename design tokens and components to a naming convention across Figma AND the codebase in one reviewable change, batch by batch. Use when asked to rename tokens or components, apply a naming convention to a design system, suggest names for unnamed variables, or when a rename in Figma has left code referring to names that no longer exist.
+description: Rename design tokens and components to a shared naming standard across Figma AND the codebase in one reviewable change, batch by batch, then hand the names to figma-token-export. Presets (`extends`) let many projects share one standard. Suggests names from what a thing IS — a colour's value, a component's structure — with a stated reason and confidence. Use when asked to rename tokens or components, apply or share a naming convention or SSOT across projects, make a Figma file match the team standard, name unnamed variables or components, or when a rename in Figma has left code referring to names that no longer exist.
 ---
 
 # Figma rename → code, in one change
@@ -25,12 +25,19 @@ inventory ──plan──▶ rename-map.json ──┬─▶ use_figma        (
   (read Figma)      (reviewed, committed)  └─▶ apply-code.mjs  (codebase)
 ```
 
-The everyday loop, once a project is set up — one batch, one commit:
+The everyday loop, once a project is set up — one batch, one commit. Every step
+is gated: nothing ships undecided, and nothing reaches code before Figma.
 
 ```bash
-node "$S/emit-figma.mjs" --batch <id>     # → paste into use_figma
+node "$S/plan.mjs"                                  # propose (merges with what exists)
+node "$S/review.mjs" status                         # decide — the only writer of decisions
+node "$S/check.mjs"                                 # refuse before touching anything
+node "$S/emit-figma.mjs" --batch <id>               # → run in use_figma
+node "$S/review.mjs" mark <id> --figma-applied
+#   re-capture dumps, then regenerate tokens
 node "$S/apply-code.mjs" --batch <id> --write
 node "$S/check.mjs" --after
+node "$S/review.mjs" mark <id> --applied            # then commit
 ```
 
 `$S` is this skill's `scripts/` directory; resolving it correctly is the first
@@ -40,10 +47,11 @@ Deeper detail lives in `./references/`, loaded on demand:
 
 | file | when |
 |---|---|
-| [`references/naming-convention.md`](references/naming-convention.md) | deciding the target convention, and writing it as rules |
+| [`presets/`](presets/) | the shared standards (`aurora`, `starter`) a project `extends` |
+| [`references/naming-convention.md`](references/naming-convention.md) | deciding the target convention, writing it as rules, and sharing it |
 | [`references/suggest-engine.md`](references/suggest-engine.md) | naming a variable from its value, and what it refuses to guess |
 | [`references/inventory.md`](references/inventory.md) | reading what exists out of Figma (`use_figma` read scripts) |
 | [`references/figma-apply.md`](references/figma-apply.md) | applying a batch, atomicity, rename chains, rollback |
-| [`references/components.md`](references/components.md) | components, variant properties, inner layers, Code Connect |
+| [`references/components.md`](references/components.md) | components: the structural classifier, variant properties, inner layers, Code Connect |
 | [`references/code-sync.md`](references/code-sync.md) | which spellings move, generated vs hand-written code, verifying |
 | [`references/rename-map.md`](references/rename-map.md) | the `rename-map.json` contract |

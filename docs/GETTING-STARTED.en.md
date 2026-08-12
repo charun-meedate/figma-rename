@@ -29,8 +29,8 @@ that makes a mistake reversible.
 2. Install the skill into your project:
 
 ```bash
-git clone <url-of-this-repo> ~/dev/design-tokens-skill
-~/dev/design-tokens-skill/install.sh ~/dev/my-project --skill figma-rename
+git clone <url-of-this-repo> ~/dev/figma-rename
+~/dev/figma-rename/install.sh ~/dev/my-project
 ```
 
 3. **The project must be in git with a clean tree** — the skill commits one

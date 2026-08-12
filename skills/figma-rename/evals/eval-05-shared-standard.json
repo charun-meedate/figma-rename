@@ -1,0 +1,20 @@
+{
+  "id": "eval-05-shared-standard",
+  "skill": "figma-rename",
+  "tests": "extends · ทีมมีมาตรฐานอยู่แล้ว โปรเจกต์ที่สองต้องไม่สร้างมาตรฐานชุดที่สอง",
+  "query": "โปรเจกต์นี้จะเอา token จาก Figma มาใช้ ทีมมีไฟล์ naming standard อยู่แล้วที่ ../design-system/naming.json ทำให้ตรงหน่อย",
+  "files": [
+    "../design-system/naming.json มี convention ครบ (segmentCase, rules, conforming, structure, components)",
+    "โปรเจกต์นี้ยังไม่มี rename.config.json",
+    "โปรเจกต์นี้ใช้ cssPrefix เป็น \"ds-\" ซึ่งต่างจากโปรเจกต์อื่นในทีม และมี tokens.config.json อยู่แล้ว"
+  ],
+  "expected_behavior": [
+    "ตั้ง \"extends\": \"../design-system/naming.json\" ไม่ copy กฎลงมาไว้ในโปรเจกต์",
+    "override เฉพาะสิ่งที่เป็นข้อเท็จจริงของ repo นี้ — figma.fileKey กับ code.* — ไม่ override เรื่องการตั้งชื่อ",
+    "รัน plan.mjs --print-config ให้ผู้ใช้เห็นผลหลัง merge และเห็นว่า base มาจากไฟล์ไหน",
+    "cssPrefix ที่ตั้งต้องตรงกับ tokens.config.json ของโปรเจกต์ ไม่ใช่เดา — check.mjs จะ error ถ้าไม่ตรง",
+    "อธิบายเป็นประโยคเดียวว่าทำไมไม่ copy: convention ที่อยู่ในโปรเจกต์เดียวคือ convention ที่จะไม่ตรงกับโปรเจกต์ถัดไป",
+    "ถ้าโปรเจกต์นี้ต้องการข้อยกเว้นจริง ๆ ให้พูดออกมาว่าเป็นข้อยกเว้น และเสนอว่าควรแก้ที่มาตรฐานกลางแทนไหม"
+  ],
+  "baseline_failure": "อ่านไฟล์มาตรฐานแล้วแปลงเป็นกฎ copy ลงใน rename.config.json ของโปรเจกต์นี้ — ใช้งานได้วันนี้ และแตกออกจากของทีมทันทีที่ฝ่ายใดฝ่ายหนึ่งแก้"
+}
