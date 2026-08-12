@@ -26,7 +26,7 @@ Variables (token), Component / Component Set, layer ข้างใน component
 
 ```bash
 S=".claude/skills/figma-rename/scripts"
-cp "$S/rename.config.example.json" rename.config.json    # ตั้ง naming convention ที่นี่
+cp "$S/rename.config.example.json" rename.config.json    # ชี้ไปที่มาตรฐานกลางด้วย extends
 
 # 1. อ่านของที่มีอยู่ออกจาก Figma (use_figma read-only → rename/inventory.json)
 #    สคริปต์อยู่ใน references/inventory.md — Claude จะรันให้
@@ -34,22 +34,71 @@ cp "$S/rename.config.example.json" rename.config.json    # ตั้ง naming c
 # 2. เสนอชื่อใหม่ → rename-map.json  (นี่คือ "ข้อเสนอ" ต้องอ่านก่อน)
 node "$S/plan.mjs" --kind variable
 
-# 3. ตรวจก่อนแตะอะไรเลย
+# 3. ตัดสินทีละกลุ่ม — ตัวที่ยังไม่ตัดสิน ยิงขึ้น Figma ไม่ได้
+node "$S/review.mjs" list --batch variable-2-semantic
+node "$S/review.mjs" accept --batch variable-2-semantic --rule strip-color-prefix
+
+# 4. ตรวจก่อนแตะอะไรเลย
 node "$S/check.mjs" --code
 
-# 4. ลงมือใน Figma ทีละ batch (พิมพ์สคริปต์ให้เอาไปใส่ use_figma)
+# 5. ลงมือใน Figma ทีละ batch (พิมพ์สคริปต์ให้เอาไปใส่ use_figma)
 node "$S/emit-figma.mjs" --batch variable-2-semantic
+node "$S/review.mjs" mark variable-2-semantic --figma-applied   # หลัง use_figma สำเร็จ
 
-# 5. regenerate token แล้วตามด้วย codemod โค้ดที่เรียกใช้
+# 6. ดึง dumps ใหม่จาก Figma ก่อน แล้วค่อย regenerate + codemod
 node ".claude/skills/figma-token-export/scripts/sync.mjs" dumps/*.json
 node "$S/apply-code.mjs" --batch variable-2-semantic            # dry run ก่อนเสมอ
 node "$S/apply-code.mjs" --batch variable-2-semantic --write
 
-# 6. ตรวจแล้ว commit
+# 7. ตรวจ แล้ว mark แล้ว commit
 node "$S/check.mjs" --after
+node "$S/review.mjs" mark variable-2-semantic --applied
 ```
 
+สถานะของ batch เดินทางเดียว `planned → figma-applied → applied` และเลื่อนด้วยคำสั่ง
+เท่านั้น สถานะอยู่ใน map ซึ่งอยู่ใน commit เดียวกับโค้ด — `git revert` จึงคืนสถานะให้เอง
+
 ย้อนกลับ: `node "$S/emit-figma.mjs" --batch <id> --reverse` แล้ว `git revert` commit นั้น
+
+## มาตรฐานกลางข้ามโปรเจกต์ (`extends`)
+
+`rename.config.json` ของแต่ละโปรเจกต์ควรมีแค่ข้อเท็จจริงของโปรเจกต์นั้น ส่วนกฎการตั้งชื่อ
+อยู่ในไฟล์เดียวที่ทุกโปรเจกต์ `extends`:
+
+```jsonc
+{ "extends": "aurora",                       // preset ที่มากับ skill
+  "extends": "../design-system/naming.json"  // หรือไฟล์กลางของทีม (path จาก config)
+}
+```
+
+การ merge เป็นแบบตื้นทีละบล็อก — `convention.rules` ของลูกจะ**ต่อท้าย**ของแม่ ส่วน key
+อื่นทับกันตรง ๆ ทุกกฎถูกแท็กว่ามาจากไฟล์ไหน เวลาคอมไพล์กฎพัง error จะบอกชื่อไฟล์ต้นทาง
+ไม่ใช่แค่ `rules[3]`
+
+preset ที่มีมาให้: `starter` (หลวม เหมาะกับไฟล์แรก) · `aurora` (เข้มงวด มี component
+vocabulary ครบ) วางไฟล์ preset ของทีมไว้ที่ `presets/` แล้วอ้างด้วยชื่อได้เลย
+
+`convention.transform` คือขั้นตัดแต่งก่อนเข้ากฎ — `stripPrefix` `stripSuffix` `addPrefix`
+`separator` `replace` ทั้งหมด**ทำซ้ำแล้วได้ผลเดิม** และจะไม่ยอมตัดจนชื่อเหลือว่าง
+ส่วนตัวพิมพ์กับสเกลตัวเลขไม่ได้อยู่ในนี้ — มันคือ `segmentCase` กับ `sizeNaming`
+
+## ตั้งชื่อ component จากโครงสร้าง
+
+token ตั้งชื่อจากค่าได้ แต่ component ไม่มี "ค่า" ให้ดู มันมีแต่โครงสร้าง — ข้างในมีอะไร
+ซ้อนกันกี่ชั้น มีข้อความไหม auto-layout วางแนวไหน `lib/classify.mjs` เอาสัญญาณพวกนี้
+ใส่กฎ 50 ข้อที่เรียงตามลำดับความสำคัญ แล้วตอบว่าน่าจะเป็น component ชนิดไหน
+
+```
+Frame 427   -> Button      [high]   มีข้อความ 1 ตัว, พื้นหลังโค้ง, ไม่มีลูกที่เป็น input
+Group 12    -> Modal       [medium] overlay + ปุ่มปิด + ลูกซ้อน 3 ชั้น
+```
+
+ปรับได้ที่ `convention.components.classifier` ใน preset — `minConfidence` ตัดตัวที่มั่นใจต่ำ
+`priorities` เลื่อนลำดับกฎทีละข้อ `pageHints` ใช้ชื่อหน้าเป็นสัญญาณเสริม `disable` ปิดกฎที่
+ให้ผลผิดกับไฟล์คุณ ทั้งหมดเป็นข้อมูล ไม่ต้องแก้ JS
+
+กฎพวกนี้ต้องการ `signature` ของแต่ละ component ซึ่งเก็บมาตอน inventory
+(สคริปต์อยู่ใน `references/inventory.md`) ถ้าไม่มี signature component จะไม่ถูกเสนอชื่อ
 
 ## Smart Suggest — ตั้งชื่อจากค่าของตัวมันเอง
 

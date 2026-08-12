@@ -50,25 +50,37 @@ node "$S/plan.mjs" --min-confidence medium  # ตัด suggestion ที่ม�
 node "$S/plan.mjs" --no-suggest             # ใช้แต่กฎใน convention
 node "$S/plan.mjs" --dry-run                # พิมพ์สรุป ไม่เขียนไฟล์
 
-# 3. ตรวจก่อนแตะอะไร
+# 3. ตัดสิน (review.mjs เป็นตัวเดียวที่เขียน decision/status ได้)
+node "$S/review.mjs" status                            # ทุก batch: สถานะ + จำนวน
+node "$S/review.mjs" list --batch <id> --pending       # อ่านเต็ม ไม่ตัดบรรทัด
+node "$S/review.mjs" accept --batch <id> --rule <ชื่อกฎ>
+node "$S/review.mjs" accept --batch <id> --min-confidence medium
+node "$S/review.mjs" reject --batch <id> --ids a,b,c
+node "$S/review.mjs" set-to <id> --to "text/primary"   # แก้ข้อเสนอ (source: human)
+node "$S/review.mjs" resolve <id> --to "brand/primary" # needsReview → เข้า batch
+node "$S/review.mjs" skip <id>                         # ปล่อยไว้ และไม่โผล่ซ้ำตอน re-plan
+
+# 4. ตรวจก่อนแตะอะไร
 node "$S/check.mjs"           # เทียบกับ inventory
 node "$S/check.mjs" --code    # + สแกน repo ว่าจะโดนแก้กี่จุด
 
-# 4. สร้างสคริปต์สำหรับ Figma
+# 5. สร้างสคริปต์สำหรับ Figma
 node "$S/emit-figma.mjs" --batch <id>
 node "$S/emit-figma.mjs" --batch <id> --with-code-syntax   # เขียนชื่อโค้ดกลับเข้า Figma
 node "$S/emit-figma.mjs" --batch <id> --reverse            # rollback
+node "$S/review.mjs" mark <id> --figma-applied            # หลัง use_figma สำเร็จ
 
-# 5. codemod
+# 6. ดึง dumps ใหม่ → regenerate → codemod
 node "$S/apply-code.mjs" --batch <id>                    # dry run (default)
 node "$S/apply-code.mjs" --batch <id> --write
 node "$S/apply-code.mjs" --batch <id> --write --no-namespace-classes
 
-# 6. ยืนยัน
+# 7. ยืนยัน
 node "$S/check.mjs" --after   # ต้องไม่เหลือชื่อเก่าที่ไหนเลย
+node "$S/review.mjs" mark <id> --applied
 ```
 
-ขั้น 4 พิมพ์ JS ออก stdout — เอาไปใส่ `use_figma` เอง (หรือให้ Claude ทำ)
+ขั้น 5 พิมพ์ JS ออก stdout — เอาไปใส่ `use_figma` เอง (หรือให้ Claude ทำ)
 ส่วน log ไปที่ stderr เลย pipe ต่อได้
 
 ---
@@ -167,6 +179,26 @@ regenerate ก่อน codemod ไหม ผ่าน selftest ไม่ได�
 identifier ให้ตรงกับที่ generator เขียนออกมาเป๊ะ ๆ `naming.lock.json` ล็อก hash ของทุกฟังก์ชันไว้
 selftest เลยจับได้แม้อีก repo จะไม่ได้อยู่บนเครื่องเดียวกัน แก้แล้วต้อง `--relock`
 **แล้วไปแก้ figma-token-export ให้ตรงกันด้วย**
+
+**เพิ่ม preset ของทีม** — วางไฟล์ที่ `skills/figma-rename/presets/<ชื่อ>.json` โครงเหมือน
+`aurora.json` แล้วโปรเจกต์อ้างด้วย `"extends": "<ชื่อ>"` ได้เลย ไม่ต้องแก้โค้ด
+ถ้าจะต่อยอดจากของเดิม ให้ preset นั้น `extends` อีกอันได้ (ซ้อนได้) ไฟล์กลางที่ไม่ได้อยู่
+ใน repo นี้อ้างด้วย path จากตัว config ได้เหมือนกัน
+
+**ปรับลำดับกฎของ classifier** — อย่า fork `lib/classify.mjs` ให้ใส่ใน preset แทน:
+
+```jsonc
+"components": { "classifier": {
+  "minConfidence": "medium",
+  "priorities": { "Tooltip": 139 },      // ทับลำดับเดิมของกฎนั้น
+  "disable": ["Radio Button"],           // ปิดกฎที่ให้ผลผิดกับไฟล์นี้
+  "pageHints": { "Forms": ["Text Input", "Checkbox"] }
+} }
+```
+
+กฎที่ลำดับสูงกว่าชนะ เวลาปรับให้ขยับทีละข้อแล้วรัน selftest — เคสในนั้นมาจาก
+component จริงที่เคยถูกจัดผิด (ปุ่มกลายเป็น Tooltip, badge ตัวเลขกลายเป็น Radio Button)
+ขยับแรงเกินไปจะพังเคสเหล่านั้นทันที
 
 **เพิ่มการสะกดใหม่ในโค้ด** (เช่น Kotlin, Swift) — แก้ `lib/codemod.mjs`
 ฟังก์ชัน `spellingsFor` + เพิ่ม guard ใน `GUARDS` แล้วเพิ่มชื่อใน

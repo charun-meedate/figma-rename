@@ -51,25 +51,37 @@ node "$S/plan.mjs" --min-confidence medium  # drop low-confidence suggestions
 node "$S/plan.mjs" --no-suggest             # convention rules only
 node "$S/plan.mjs" --dry-run                # print the summary, write nothing
 
-# 3. refuse before touching anything
+# 3. decide (review.mjs is the only writer of decision/status)
+node "$S/review.mjs" status                            # every batch: status + counts
+node "$S/review.mjs" list --batch <id> --pending       # the full list, untruncated
+node "$S/review.mjs" accept --batch <id> --rule <rule-name>
+node "$S/review.mjs" accept --batch <id> --min-confidence medium
+node "$S/review.mjs" reject --batch <id> --ids a,b,c
+node "$S/review.mjs" set-to <id> --to "text/primary"   # edit a proposal (source: human)
+node "$S/review.mjs" resolve <id> --to "brand/primary" # needsReview → into the batch
+node "$S/review.mjs" skip <id>                         # leave it; survives a re-plan
+
+# 4. refuse before touching anything
 node "$S/check.mjs"           # against the inventory
 node "$S/check.mjs" --code    # + scan the repo for how many places will change
 
-# 4. build the Figma script
+# 5. build the Figma script
 node "$S/emit-figma.mjs" --batch <id>
 node "$S/emit-figma.mjs" --batch <id> --with-code-syntax   # write code names back into Figma
 node "$S/emit-figma.mjs" --batch <id> --reverse            # rollback
+node "$S/review.mjs" mark <id> --figma-applied            # after use_figma succeeds
 
-# 5. codemod
+# 6. re-capture dumps → regenerate → codemod
 node "$S/apply-code.mjs" --batch <id>                    # dry run (default)
 node "$S/apply-code.mjs" --batch <id> --write
 node "$S/apply-code.mjs" --batch <id> --write --no-namespace-classes
 
-# 6. verify
-node "$S/check.mjs" --after   # no old spelling may survive anywhere
+# 7. verify
+node "$S/check.mjs" --after
+node "$S/review.mjs" mark <id> --applied   # no old spelling may survive anywhere
 ```
 
-Step 4 prints JS on stdout — paste it into `use_figma` yourself (or let Claude
+Step 5 prints JS on stdout — paste it into `use_figma` yourself (or let Claude
 do it). Logs go to stderr, so the output pipes cleanly.
 
 ---
@@ -178,6 +190,29 @@ codemod has to spell identifiers exactly the way the generator writes them. The
 `naming.lock.json` pins a hash of every shared function, so the selftest catches
 drift even with the other repo nowhere on the machine. Re-lock deliberately with
 `--relock`, **then make the same change in figma-token-export.**
+
+**Adding your team's preset** — drop a file at
+`skills/figma-rename/presets/<name>.json`, same shape as `aurora.json`, and a
+project refers to it with `"extends": "<name>"`. No code change. A preset may
+itself extend another (nesting is allowed), and a shared file outside this repo
+is referenced by path, resolved from the config that names it.
+
+**Retuning the classifier** — do not fork `lib/classify.mjs`; put it in the
+preset:
+
+```jsonc
+"components": { "classifier": {
+  "minConfidence": "medium",
+  "priorities": { "Tooltip": 139 },      // override that rule's priority
+  "disable": ["Radio Button"],           // switch off a rule that misfires here
+  "pageHints": { "Forms": ["Text Input", "Checkbox"] }
+} }
+```
+
+Higher priority wins. Move one rule at a time and run the selftest — its cases
+come from real components that were once classified wrong (a button read as
+Tooltip, a numeric badge read as Radio Button), so an over-eager shove breaks
+them immediately.
 
 **Adding a new code spelling** (Kotlin, Swift, …) — edit `spellingsFor` in
 `lib/codemod.mjs`, add a guard to `GUARDS`, and register the name in

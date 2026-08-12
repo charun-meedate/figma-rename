@@ -29,7 +29,7 @@ Text / Effect / Paint styles.
 
 ```bash
 S=".claude/skills/figma-rename/scripts"
-cp "$S/rename.config.example.json" rename.config.json    # the naming convention lives here
+cp "$S/rename.config.example.json" rename.config.json    # point it at the shared standard with extends
 
 # 1. read what exists out of Figma (use_figma read-only → rename/inventory.json)
 #    the scripts are in references/inventory.md — Claude runs them
@@ -37,23 +37,79 @@ cp "$S/rename.config.example.json" rename.config.json    # the naming convention
 # 2. propose new names → rename-map.json  (a PROPOSAL; read it)
 node "$S/plan.mjs" --kind variable
 
-# 3. refuse before touching anything
+# 3. decide, in groups — nothing undecided can ship
+node "$S/review.mjs" list --batch variable-2-semantic
+node "$S/review.mjs" accept --batch variable-2-semantic --rule strip-color-prefix
+
+# 4. refuse before touching anything
 node "$S/check.mjs" --code
 
-# 4. apply in Figma, one batch at a time (prints a script for use_figma)
+# 5. apply in Figma, one batch at a time (prints a script for use_figma)
 node "$S/emit-figma.mjs" --batch variable-2-semantic
+node "$S/review.mjs" mark variable-2-semantic --figma-applied   # after use_figma succeeds
 
-# 5. regenerate tokens, then rewrite the code that uses them
+# 6. re-capture the dumps from Figma FIRST, then regenerate and rewrite
 node ".claude/skills/figma-token-export/scripts/sync.mjs" dumps/*.json
 node "$S/apply-code.mjs" --batch variable-2-semantic            # dry run first, always
 node "$S/apply-code.mjs" --batch variable-2-semantic --write
 
-# 6. verify, then commit
+# 7. verify, mark, commit
 node "$S/check.mjs" --after
+node "$S/review.mjs" mark variable-2-semantic --applied
 ```
+
+A batch moves one way — `planned → figma-applied → applied` — and only by an
+explicit command. That state lives in the map, which rides in the same commit as
+the code, so `git revert` restores it for free.
 
 Rollback: `node "$S/emit-figma.mjs" --batch <id> --reverse`, then `git revert`
 that commit.
+
+## One standard across projects (`extends`)
+
+A project's `rename.config.json` should hold only that project's facts. The
+naming rules live in one file that every project extends:
+
+```jsonc
+{ "extends": "aurora",                       // a preset shipped with the skill
+  "extends": "../design-system/naming.json"  // or your team's file, resolved from the config
+}
+```
+
+The merge is shallow, block by block — a child's `convention.rules` are
+**appended** to the parent's, every other key overrides. Each rule is tagged
+with the file it came from, so a rule that fails to compile names its source
+file rather than just `rules[3]`.
+
+Presets included: `starter` (permissive, right for a first file) and `aurora`
+(strict, with a full component vocabulary). Drop your team's preset into
+`presets/` and refer to it by name.
+
+`convention.transform` is the tidy-up pass that runs before the rules —
+`stripPrefix`, `stripSuffix`, `addPrefix`, `separator`, `replace`. All of them
+are idempotent, and none will strip a name down to nothing. Case and the number
+scale are *not* here: those are `segmentCase` and `sizeNaming`.
+
+## Naming a component from its structure
+
+A token can be named from its value; a component has no value to read. What it
+has is structure — what it contains, how deeply, whether there is text, which
+way auto-layout runs. `lib/classify.mjs` feeds those signals through 50
+priority-ordered rules and answers with a component kind.
+
+```
+Frame 427   -> Button      [high]   one text child, rounded fill, no input descendant
+Group 12    -> Modal       [medium] overlay + close button + 3 levels of nesting
+```
+
+Tune it under `convention.components.classifier` in the preset: `minConfidence`
+drops the weak calls, `priorities` moves individual rules up or down,
+`pageHints` treats the page name as extra evidence, and `disable` turns off a
+rule that misfires on your file. All data — no JS to fork.
+
+These rules need each component's `signature`, captured during inventory (the
+script is in `references/inventory.md`). Without a signature, a component gets
+no suggestion at all.
 
 ## Smart Suggest — naming a variable from its own value
 
