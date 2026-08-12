@@ -118,7 +118,9 @@ const [text, effect, paint] = await Promise.all([
   figma.getLocalEffectStylesAsync(),
   figma.getLocalPaintStylesAsync(),
 ]);
-const map = (styles, kind) => styles.map(s => ({ kind, id: s.id, name: s.name, remote: s.remote }));
+// `scope` is recorded as "file" because styles are file-level: unlike variables
+// there is no collection to group by. It is what names the batch.
+const map = (styles, kind) => styles.map(s => ({ kind, id: s.id, name: s.name, scope: "file", remote: s.remote }));
 return {
   entries: [...map(text, "textStyle"), ...map(effect, "effectStyle"), ...map(paint, "paintStyle")],
 };

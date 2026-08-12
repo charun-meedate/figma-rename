@@ -320,7 +320,10 @@ async function main() {
     // alone — split the batch by page in the map if that happens.
     const pageIds = [...group.pageIds];
     chunks.forEach((renames, i) => {
-      const base = `${group.kind}-${slug(group.scope ?? key)}`;
+      // Styles are file-level and carry no scope, and falling back to `key`
+      // spelled the kind twice — `effectStyle-effectstyle`, which is what you
+      // then type into --batch every time. "file" is both shorter and true.
+      const base = `${group.kind}-${slug(group.scope ?? 'file')}`;
       const id = chunks.length > 1 ? `${base}-${i + 1}` : base;
       // Two collections named "1. Primitive" and "1 Primitive" slug to the same
       // thing. Caught here, where the cause is visible, rather than surfacing
@@ -345,7 +348,7 @@ async function main() {
     });
     if (pageIds.length > 1) {
       console.log(
-        `[plan] warning: batch "${group.kind}-${slug(group.scope ?? key)}" spans ${pageIds.length} pages — ` +
+        `[plan] warning: batch "${group.kind}-${slug(group.scope ?? 'file')}" spans ${pageIds.length} pages — ` +
           'split it by page before applying, so each use_figma call switches page once.',
       );
     }

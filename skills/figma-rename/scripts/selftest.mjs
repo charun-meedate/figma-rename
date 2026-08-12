@@ -2034,6 +2034,37 @@ test('a rename that DOES change a code spelling is never called regrouping-only'
   p.cleanup();
 });
 
+test('a file-level style batch is named for the file, not the kind twice', () => {
+  // Styles have no collection to group by, and the old fallback spelled the
+  // kind into the id a second time: `effectStyle-effectstyle`, which is the
+  // string you then type into --batch on every command in the loop.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-style-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['effectStyle'],
+      convention: { segmentCase: 'kebab', rules: [{ match: 'shadow/**', to: 'elevation/$1' }] },
+      code: { roots: ['.'], include: ['**/*.css'], exclude: [], generated: [] },
+    }),
+  );
+  // Exactly what the shipped capture script returns — no scope of its own.
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({
+      entries: [{ kind: 'effectStyle', id: 'S:abc,', name: 'shadow/xs', remote: false }],
+    }),
+  );
+  fs.writeFileSync(path.join(dir, 'src/a.css'), '.c{box-shadow:var(--shadow-xs)}\n');
+  const result = run('plan.mjs', [], dir);
+  assert.equal(result.ok, true, result.out);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  assert.equal(map.batches[0].id, 'effectStyle-file');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a rename that only regroups segments says so instead of reporting zero', () => {
   // Found on TestDSDS: font-family/heading -> font/family/heading. Every code
   // spelling flattens "/" and "-" identically, so the identifier does not move
