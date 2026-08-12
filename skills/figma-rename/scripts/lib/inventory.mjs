@@ -10,7 +10,12 @@ import fs from 'node:fs/promises';
 import { VALID_KINDS } from './config.mjs';
 
 /**
- * The uniqueness namespace a name lives in. Two entries in the same bucket
+ * The uniqueness namespace a name lives in.
+ *
+ * Computed on demand from an inventory entry — never stored in the rename map.
+ * A stored copy was write-only and disagreed with this function for layers
+ * (it was built without `parentId`), which is the worst kind of duplicate: one
+ * that looks authoritative. Two entries in the same bucket
  * may not end up with the same name — Figma rejects a duplicate variable name
  * inside one collection, and a duplicate style name is legal but makes the
  * picker unusable.

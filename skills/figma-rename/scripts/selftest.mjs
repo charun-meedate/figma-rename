@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { buildReplacer, namespaceClassPairs, rewrite, spellingsFor } from './lib/codemod.mjs';
 import { classifyComponent, findNameCollisions, suggestComponentName } from './lib/classify.mjs';
-import { compileConvention, normalizeName, proposeName } from './lib/convention.mjs';
+import { caseSegment, compileConvention, normalizeName, proposeName } from './lib/convention.mjs';
 import { MAP_VERSION } from './lib/map.mjs';
 import {
   SHADE_CHROMATIC,
@@ -1331,6 +1331,123 @@ test('the artefact exclusion cannot be overridden away', () => {
   );
   assert.ok(printed.code.exclude.includes('rename.config.json'));
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ------------------------------------------------------------ plan integrity
+
+section('plan integrity');
+
+/** A project whose config the caller shapes. */
+function planProject(convention, entries, extra = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-plan-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({ figma: { fileKey: 'K' }, kinds: ['variable'], convention, ...extra }),
+  );
+  fs.writeFileSync(path.join(dir, 'rename/inventory.json'), JSON.stringify({ entries }));
+  return {
+    dir,
+    readMap: () => JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8')),
+    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
+  };
+}
+
+const colourEntry = (id, name, scope = 'S') => ({
+  kind: 'variable', id, name, scope, resolvedType: 'COLOR', value: { r: 0.2, g: 0.5, b: 0.9, a: 1 },
+});
+
+test('convention.ignore is not overridden by a value-based suggestion', () => {
+  // The bug: only `renamed` blocked a suggestion, so a generic leaf inside an
+  // ignored group got planned and renamed — the opposite of what ignore means.
+  const p = planProject(
+    { segmentCase: 'kebab', ignore: ['_wip/**'] },
+    [colourEntry('V1', '_wip/Color 3')],
+  );
+  const result = run('plan.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  const rows = p.readMap().batches.flatMap((b) => b.renames);
+  assert.equal(rows.length, 0, `ignore means out of scope entirely; got ${JSON.stringify(rows)}`);
+  assert.equal(p.readMap().needsReview.length, 0, 'nor should it become an open question');
+  assert.match(result.out, /ignored {5}1/);
+  p.cleanup();
+});
+
+test('convention.conforming is not overridden by a value-based suggestion', () => {
+  const p = planProject(
+    { segmentCase: 'kebab', conforming: ['palette/**'] },
+    [colourEntry('V1', 'palette/Color 3')],
+  );
+  const result = run('plan.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  const rows = p.readMap().batches.flatMap((b) => b.renames);
+  assert.equal(rows.length, 0, `conforming means hands off; got ${JSON.stringify(rows)}`);
+  assert.match(result.out, /conforming {2}1/);
+  p.cleanup();
+});
+
+test('--only scopes the suggestions, but shade ladders still learn from the whole file', () => {
+  // Calibration must read every ramp or `--only` would produce different shade
+  // names than a full run; the RESULTS are what gets scoped.
+  const ramp = ['010', '100', '300', '500', '700', '900'].map((shade, i) =>
+    colourEntry(`R${i}`, `palette/red/${shade}`, 'Primitive'),
+  );
+  ramp[0].value = { r: 1, g: 0.97, b: 0.97, a: 1 };
+  ramp[1].value = { r: 1, g: 0.82, b: 0.82, a: 1 };
+  ramp[2].value = { r: 0.99, g: 0.65, b: 0.65, a: 1 };
+  ramp[3].value = { r: 0.94, g: 0.27, b: 0.27, a: 1 };
+  ramp[4].value = { r: 0.73, g: 0.11, b: 0.11, a: 1 };
+  ramp[5].value = { r: 0.5, g: 0.11, b: 0.11, a: 1 };
+  const p = planProject({ segmentCase: 'kebab' }, [...ramp, colourEntry('X1', 'Color 9', 'Other')]);
+  const result = run('plan.mjs', ['--only', 'Color*'], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /learned from \d+ shade\(s\) in this file/, 'calibration must still see the ramp');
+  const rows = p.readMap().batches.flatMap((b) => b.renames);
+  assert.ok(rows.every((r) => r.id === 'X1'), `only the scoped entry may be planned; got ${JSON.stringify(rows.map((r) => r.id))}`);
+  p.cleanup();
+});
+
+test('an out-of-scope duplicate does not land in needsReview', () => {
+  const p = planProject({ segmentCase: 'kebab' }, [
+    colourEntry('A1', 'Color 1', 'Wanted'),
+    // Same value twice in a collection the user did not ask about.
+    colourEntry('B1', 'Other 1', 'Ignored'),
+    colourEntry('B2', 'Other 2', 'Ignored'),
+  ]);
+  const result = run('plan.mjs', ['--only', 'Color*'], p.dir);
+  assert.equal(result.ok, true, result.out);
+  const ids = p.readMap().needsReview.map((i) => i.id);
+  assert.equal(ids.includes('B1'), false, `out-of-scope items must not be raised; got ${JSON.stringify(ids)}`);
+  p.cleanup();
+});
+
+test('the plan reports what the file itself looks like', () => {
+  const p = planProject({ segmentCase: 'kebab' }, [
+    colourEntry('V1', 'colorTextPrimary'),
+    colourEntry('V2', 'colorTextSecondary'),
+  ]);
+  const result = run('plan.mjs', ['--dry-run'], p.dir);
+  assert.match(result.out, /the file itself: 2 name\(s\)/);
+  assert.match(result.out, /camelCase/);
+  p.cleanup();
+});
+
+test('segmentCase "preserve" actually preserves', () => {
+  assert.equal(caseSegment('Text Primary', 'preserve'), 'Text Primary');
+  assert.equal(caseSegment('Text Primary', 'kebab'), 'text-primary');
+});
+
+test('two scopes that slug alike get distinct batch ids and a warning', () => {
+  const p = planProject({ segmentCase: 'kebab', rules: [{ match: 'x/**', to: 'y/$1' }] }, [
+    colourEntry('V1', 'x/a', '1. Primitive'),
+    colourEntry('V2', 'x/b', '1 Primitive'),
+  ]);
+  const result = run('plan.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /slug to the batch id/);
+  const ids = p.readMap().batches.map((b) => b.id);
+  assert.equal(new Set(ids).size, ids.length, `ids must be unique; got ${JSON.stringify(ids)}`);
+  p.cleanup();
 });
 
 // ---------------------------------------------------------- batch lifecycle

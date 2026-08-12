@@ -25,6 +25,7 @@ import {
   matchesAnyPath,
   namespaceClassPairs,
   spellingsFor,
+  TOKEN_KINDS,
 } from './lib/codemod.mjs';
 import { loadConfig, parseArgs } from './lib/config.mjs';
 import { bucketOf, loadInventory } from './lib/inventory.mjs';
@@ -38,8 +39,6 @@ import {
   statusOf,
 } from './lib/map.mjs';
 import { assertUniqueIdentifiers, toCamel, toKebab } from './lib/naming.mjs';
-
-const TOKEN_KINDS = new Set(['variable', 'textStyle', 'effectStyle', 'paintStyle']);
 
 /** Characters Figma tolerates in a variable or style name without surprises. */
 const SAFE_NAME = /^[A-Za-z0-9 _.&+()/-]+$/;

@@ -67,7 +67,10 @@ const CASERS = {
       .map((w, i) => (i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase()))
       .join(''),
   pascal: (words) => words.map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(''),
-  preserve: (words) => words.join('-'),
+  // Genuinely leaves the segment alone. The old version split into words and
+  // rejoined with "-", so "Text Primary" came out "Text-Primary" — a caser
+  // named `preserve` that changed the name.
+  preserve: (words, original) => original,
 };
 
 export const CASE_STYLES = Object.keys(CASERS);
@@ -78,7 +81,7 @@ export function caseSegment(segment, style) {
   const caser = CASERS[style];
   if (!caser) throw new Error(`Unknown segmentCase "${style}" — use one of: ${CASE_STYLES.join(', ')}`);
   const words = splitWords(segment);
-  return words.length ? caser(words) : segment;
+  return words.length ? caser(words, segment) : segment;
 }
 
 /**

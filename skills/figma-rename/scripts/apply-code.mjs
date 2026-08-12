@@ -30,12 +30,11 @@ import {
   namespaceClassPairs,
   rewrite,
   spellingsFor,
+  TOKEN_KINDS,
 } from './lib/codemod.mjs';
 import { loadConfig, parseArgs } from './lib/config.mjs';
 import { loadInventory } from './lib/inventory.mjs';
 import { batchById, isFrozen, loadMap, pendingRenames, selectRenames, statusOf } from './lib/map.mjs';
-
-const TOKEN_KINDS = new Set(['variable', 'textStyle', 'effectStyle', 'paintStyle']);
 
 async function main() {
   const args = parseArgs();

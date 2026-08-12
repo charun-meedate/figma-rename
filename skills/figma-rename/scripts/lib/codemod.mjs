@@ -47,8 +47,12 @@ const GUARDS = {
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Token-ish kinds spell themselves as identifiers in code; component-ish kinds do not. */
-const TOKEN_KINDS = new Set(['variable', 'textStyle', 'effectStyle', 'paintStyle']);
+/**
+ * Token-ish kinds spell themselves as identifiers in code; component-ish kinds
+ * do not. Exported because check.mjs and apply-code.mjs need the same answer,
+ * and three private copies of one Set is three chances to disagree.
+ */
+export const TOKEN_KINDS = new Set(['variable', 'textStyle', 'effectStyle', 'paintStyle']);
 
 /**
  * Every literal string pair one rename implies.

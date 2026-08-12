@@ -80,16 +80,26 @@ async function main() {
   let suggested = new Map();
   let suggestReview = [];
   let calibration = null;
+  let detected = null;
   if (wantSuggest) {
+    // Calibration reads the WHOLE inventory on purpose — the shade ladders are
+    // learned from every ramp in the file, and scoping that away would make
+    // `--only "color/**"` produce different shade names than a full run.
+    //
+    // The RESULTS are then scoped. Running unscoped filled needsReview with
+    // aliases and duplicates from collections the user had explicitly excluded,
+    // and offered no way to act on them.
+    const inScope = new Set(scoped.map((e) => e.id));
     const result = suggestForEntries(inventory.entries, {
       sizeNaming: config.convention?.sizeNaming ?? 'semantic',
       group: config.convention?.colorGroup ?? 'colors',
     });
     calibration = result.calibration;
-    suggestReview = result.review;
+    detected = result.convention;
+    suggestReview = result.review.filter((item) => inScope.has(item.id));
     suggested = new Map(
       result.suggestions
-        .filter((s) => CONFIDENCE_RANK[s.confidence] >= minConfidence)
+        .filter((s) => inScope.has(s.id) && CONFIDENCE_RANK[s.confidence] >= minConfidence)
         .map((s) => [s.id, s]),
     );
   }
@@ -137,8 +147,14 @@ async function main() {
     // outranks a formula. Bare normalisation is not a decision — it would turn
     // "Color 1" into "color-1", which is tidier and no more meaningful, and
     // would shut out the suggestion that knows the thing is blue.
+    //
+    // `ignored` and `conforming` are also decisions, and stronger ones: they say
+    // "do not touch this". Before, only `renamed` blocked the suggestion, so a
+    // generic leaf inside an ignored group (`_wip/Color 3`) got planned and
+    // renamed anyway — the exact opposite of what `convention.ignore` means.
     const ruleDecided = result.status === 'renamed';
-    if (!ruleDecided && suggestion && suggestion.suggestedName !== entry.name) {
+    const handsOff = result.status === 'ignored' || result.status === 'conforming';
+    if (!ruleDecided && !handsOff && suggestion && suggestion.suggestedName !== entry.name) {
       to = suggestion.suggestedName;
       rule = null;
       reason = suggestion.reason;
@@ -153,7 +169,7 @@ async function main() {
     // open question, not a formatting problem. Emitting "Variable 3" ->
     // "variable-3" would spend a rename, a review and a commit on making the
     // absence of a name tidier.
-    if (source === 'rule' && !ruleDecided && isGenericName(entry.name)) {
+    if (source === 'rule' && !ruleDecided && !handsOff && isGenericName(entry.name)) {
       needsReview.push({
         kind: entry.kind,
         id: entry.id,
@@ -273,6 +289,18 @@ async function main() {
   console.log(`[plan] ${scoped.length} inventory entr${scoped.length === 1 ? 'y' : 'ies'} in scope`);
   for (const [status, n] of Object.entries(counts)) {
     if (n) console.log(`[plan]   ${status.padEnd(11)} ${n}`);
+  }
+  if (detected && detected.total) {
+    // Computed anyway by the suggest engine; printing it is how a user finds out
+    // their file is not as consistent as the convention assumes.
+    const odd = [];
+    if (detected.separator && detected.separator !== '/') odd.push(`most names use "${detected.separator}", not "/"`);
+    if (detected.camelCount) odd.push(`${detected.camelCount} name(s) are camelCase`);
+    if (detected.pascalCount) odd.push(`${detected.pascalCount} name(s) are PascalCase`);
+    console.log(
+      `[plan] the file itself: ${detected.total} name(s), usually ${detected.groupDepth} segment(s) deep` +
+        (odd.length ? ` — ${odd.join(', ')}` : ''),
+    );
   }
   if (calibration) {
     const describe = (c) =>
