@@ -1333,6 +1333,115 @@ test('the artefact exclusion cannot be overridden away', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// ------------------------------------------------ handoff to token-export
+
+section('handoff');
+
+/** A project with both configs, so the cross-check has something to compare. */
+function handoffProject(renameCode, tokensConfig, rules = [{ match: 'palette/**', to: 'primitive/$1' }]) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-handoff-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      figma: { fileKey: 'K' },
+      kinds: ['variable'],
+      convention: { segmentCase: 'kebab', rules },
+      code: renameCode,
+    }),
+  );
+  if (tokensConfig) fs.writeFileSync(path.join(dir, 'tokens.config.json'), JSON.stringify(tokensConfig));
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({ entries: [{ kind: 'variable', id: 'V1', name: 'palette/red/500', scope: 'S', resolvedType: 'COLOR', value: { r: 0.9, g: 0.2, b: 0.2, a: 1 } }] }),
+  );
+  run('plan.mjs', [], dir);
+  return { dir, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('a cssPrefix that disagrees with the generator is an error, not a silent no-op', () => {
+  const p = handoffProject(
+    { cssPrefix: 'ds-', generated: ['src/tokens/**'] },
+    { targets: [{ type: 'web', out: 'src/tokens', cssPrefix: '' }] },
+  );
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /code\.cssPrefix is "ds-"/);
+  assert.match(result.out, /matched nothing/);
+  p.cleanup();
+});
+
+test('flutterPrefix is compared against `prefix`, which is what that config calls it', () => {
+  const p = handoffProject(
+    { flutterPrefix: 'App', generated: ['lib/tokens/**'] },
+    { targets: [{ type: 'flutter', out: 'lib/tokens', prefix: 'Rz' }] },
+  );
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /flutterPrefix/);
+  assert.match(result.out, /`prefix`/);
+  p.cleanup();
+});
+
+test('a generated directory the config forgot is a warning', () => {
+  const p = handoffProject(
+    { cssPrefix: '', generated: [] },
+    { targets: [{ type: 'web', out: 'src/tokens', cssPrefix: '' }] },
+  );
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /does not cover "src\/tokens"/);
+  assert.match(result.out, /the next regenerate will erase the patch/);
+  p.cleanup();
+});
+
+test('a rename that orphans a layers glob is warned about', () => {
+  // The trap: layers are matched on token NAMES, so moving a first segment
+  // makes the glob match nothing and the tokens fall into `other`.
+  const p = handoffProject(
+    { cssPrefix: '', generated: ['src/tokens/**'] },
+    {
+      targets: [{ type: 'web', out: 'src/tokens', cssPrefix: '', layers: ['primitive'] }],
+      layers: { primitive: ['palette/**'], semantic: ['color/**'] },
+    },
+  );
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /layer "primitive" matches "palette\/\*\*"/);
+  assert.match(result.out, /fall/);
+  p.cleanup();
+});
+
+test('matching configs cross-check cleanly', () => {
+  const p = handoffProject(
+    { cssPrefix: '', generated: ['src/tokens/**'] },
+    { targets: [{ type: 'web', out: 'src/tokens', cssPrefix: '' }], layers: { semantic: ['color/**'] } },
+  );
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.equal(/cssPrefix is/.test(result.out), false, result.out);
+  p.cleanup();
+});
+
+test('generated paths with no generator to explain them are flagged', () => {
+  // The shipped example ships a non-empty `generated`; a project with
+  // hand-written tokens would have the codemod skip exactly what needs renaming.
+  const p = handoffProject({ cssPrefix: '', generated: ['src/tokens/**'] }, null);
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /no tokens\.config\.json/);
+  assert.match(result.out, /skip the very files that need renaming/);
+  p.cleanup();
+});
+
+test('an explicit tokensConfig that does not exist is an error', () => {
+  const p = handoffProject({ cssPrefix: '', tokensConfig: 'nope.json' }, null);
+  const result = run('check.mjs', [], p.dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /code\.tokensConfig points at/);
+  p.cleanup();
+});
+
 // --------------------------------------------------------------- components
 
 section('components');

@@ -28,6 +28,7 @@ import {
   TOKEN_KINDS,
 } from './lib/codemod.mjs';
 import { COMMON_FLAGS, loadConfig, parseArgs } from './lib/config.mjs';
+import { crossCheck, loadTokensConfig } from './lib/handoff.mjs';
 import { bucketOf, loadInventory } from './lib/inventory.mjs';
 import {
   conventionHash,
@@ -218,6 +219,21 @@ async function main() {
     } catch (err) {
       errors.push(err.message);
     }
+  }
+
+  // ---- the handoff to figma-token-export ----------------------------------
+  const tokensConfig = await loadTokensConfig(config);
+  if (tokensConfig) {
+    const handoff = crossCheck(config, tokensConfig, renames);
+    errors.push(...handoff.errors);
+    warnings.push(...handoff.warnings);
+    for (const note of handoff.notes) console.log(`[check] note: ${note}`);
+  } else if (config.code.generated?.length) {
+    warnings.push(
+      `code.generated lists ${config.code.generated.length} path(s) but this project has no ` +
+        'tokens.config.json — if the tokens here are hand-written, empty `generated` or the codemod ' +
+        'will skip the very files that need renaming.',
+    );
   }
 
   if (args.code) await reportCodeHits(config, renames, warnings, allTokenNames);

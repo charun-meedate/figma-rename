@@ -343,21 +343,57 @@ person guessing the code name from the Figma name.
 
 ## Step 5 — bring the code across
 
-Order matters, and it is not the obvious one. Do all three before building:
+Order matters, and it is not the obvious one. Four steps, none of them optional
+if the project uses `figma-token-export`:
 
 ```bash
-# 1. regenerate the token files from the renamed Figma (figma-token-export)
+# 1. RE-CAPTURE the dumps from Figma — the rename just changed the names
+#    (use_figma / get_variable_defs, exactly as figma-token-export documents)
+
+# 2. regenerate the token files from those fresh dumps
 node ".claude/skills/figma-token-export/scripts/sync.mjs" dumps/*.json
 
-# 2. rewrite everything that REFERENCES those tokens
+# 3. rewrite everything that REFERENCES those tokens
 node "$S/apply-code.mjs" --batch <id>            # dry run first — always
 node "$S/apply-code.mjs" --batch <id> --write
 
-# 3. build / analyze / test
+# 4. build / analyze / test
 ```
 
-Between step 1 and step 2 the tree does not compile. That is expected and fine
+**Step 1 is the one people skip, and it fails silently.** `sync.mjs` reads
+whatever is in `dumps/` — if those files were captured before the Figma rename,
+it faithfully regenerates the OLD names. The tree then compiles against a
+`tokens.css` that disagrees with Figma, `check.mjs --after` reports stale names
+in a generated file, and nothing in that message points at the dumps.
+
+**If the project has no `figma-token-export`**, skip steps 1–2 and set
+`"generated": []` in `rename.config.json` — otherwise the codemod skips the very
+files that need renaming. `check.mjs` warns when `generated` is non-empty and
+there is no `tokens.config.json` to explain it.
+
+Between step 1 and step 3 the tree does not compile. That is expected and fine
 — what must never happen is *committing* in that state.
+
+### `check.mjs` cross-checks the two configs for you
+
+When a `tokens.config.json` is present (or `code.tokensConfig` points at one),
+`check.mjs` compares the settings that have to agree and refuses on a mismatch:
+
+| figma-rename | figma-token-export | why it matters |
+|---|---|---|
+| `code.cssPrefix` | `targets[type=web].cssPrefix` | wrong ⇒ every CSS var is spelled wrong and the codemod reports "matched nothing" |
+| `code.flutterPrefix` | `targets[type=flutter].`**`prefix`** | wrong ⇒ namespace class rewrites target classes that do not exist |
+| `code.generated` | `targets[].out` | missing ⇒ the codemod patches files the next generate erases |
+
+Note the asymmetry in the second row — the key is `prefix` there and
+`flutterPrefix` here. It is the kind of thing that is obvious once and invisible
+forever after, which is why the check does it rather than the reader.
+
+It also warns when a rename moves a first segment that a `layers` glob in
+`tokens.config.json` matches. Those globs are matched on **token names**, so
+moving `palette/**` to `primitive/**` orphans `"primitive": ["palette/**"]`, the
+tokens fall into `other`, and every target selecting that layer quietly stops
+containing them. Update the glob in the same commit.
 
 `apply-code.mjs` is dry-run by default. The interesting output is not "it
 worked", it is the file list and the per-spelling counts. It skips everything
