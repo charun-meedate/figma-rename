@@ -2145,6 +2145,30 @@ test('a figma-source project without a fileKey is refused, not half-run', () => 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a whole Tailwind group can move while its suffixes stay', () => {
+  // Tailwind v3 keeps the token identity in a JS object, so the name developers
+  // type is the object key. Measured on lotteryplus-frontend: 296 of ~300 class
+  // uses are the bare group (`text-primary`), which no leaf-token rename can
+  // reach. Moving the group needs a guard that allows a suffix to follow —
+  // reachable only through an explicit `code` pair, because calling a bare word
+  // a token group is a judgement a person makes.
+  const rename = {
+    from: 'primary/DEFAULT', to: 'primary/DEFAULT', kind: 'variable',
+    code: [{ from: 'primary', to: 'brand', guard: 'tailwindGroup' }],
+  };
+  const replacer = buildReplacer(spellingsFor(rename, { spellings: [], cssPrefix: '' }));
+  const moved = (src) => rewrite(src, replacer).text;
+
+  assert.equal(moved('className="text-primary"'), 'className="text-brand"');
+  assert.equal(moved('className="bg-primary-darker"'), 'className="bg-brand-darker"');
+  // Tailwind takes the key verbatim, so a snake_case key reaches the class too.
+  assert.equal(moved('className="bg-primary-soft_light"'), 'className="bg-brand-soft_light"');
+  // and it stays out of everything that is not a utility class
+  assert.equal(moved("  primary: { DEFAULT: '…' },"), "  primary: { DEFAULT: '…' },");
+  assert.equal(moved('// primary flow starts here'), '// primary flow starts here');
+  assert.equal(moved('const primaryKey = 1'), 'const primaryKey = 1');
+});
+
 test('a Tailwind utility class is a place a token name lives', () => {
   // Measured on a real project (insureplus-frontend): 531 tokens, 254 var()
   // references, and 1,242 references through Tailwind utility classes. Without

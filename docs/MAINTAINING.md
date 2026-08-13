@@ -202,7 +202,7 @@ convention ทั้งสองครั้งคำแนะนำถูกต
 มีสองอย่างที่ต้องผ่าน และเป็นคนละเรื่องกัน:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 170 เคส — สคริปต์ยังถูก
+node skills/figma-rename/scripts/selftest.mjs     # 171 เคส — สคริปต์ยังถูก
 ```
 
 กับ **eval** ใน `skills/figma-rename/evals/` ซึ่งทดสอบว่า *agent เดินกระบวนการถูก* —

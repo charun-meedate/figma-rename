@@ -51,6 +51,16 @@ const GUARDS = {
     '(?<=(?:^|[\\s"\'`:\\[(])(?:bg|text|border|fill|stroke|ring|outline|shadow|divide|accent|caret|decoration|placeholder|from|via|to)-)',
     '(?![\\w-])',
   ],
+  // Renaming a whole Tailwind group — `primary/**` to `brand/**` — has to move
+  // the group segment while leaving whatever follows it alone: `text-primary`,
+  // `bg-primary-darker` and `bg-primary-soft_light` all become `…-brand…`. So
+  // the trailing guard forbids a word character but allows `-`, which is the
+  // one difference from `tailwind`. Only reachable through an explicit `code`
+  // pair, because deciding that a bare word is a token group is a judgement.
+  tailwindGroup: [
+    '(?<=(?:^|[\\s"\'`:\\[(])(?:bg|text|border|fill|stroke|ring|outline|shadow|divide|accent|caret|decoration|placeholder|from|via|to)-)',
+    '(?!\\w)',
+  ],
   member: ['(?<=\\.)', '(?![\\w$])'],
   dot: ['(?<![\\w.-])', '(?![\\w.-])'],
 };

@@ -148,6 +148,58 @@ Say what is out of reach explicitly in the PR description. A rename that is
 "done" in one repo and unannounced in three others is worse than one that was
 never started.
 
+
+## Tailwind, and where the name really lives
+
+Two Tailwind projects can need completely different work, because the version
+decides which artefact holds the token's identity.
+
+**Tailwind v4** keeps it in CSS custom properties, and `@theme` turns each one
+into a utility class. The name in the CSS *is* the name in the class, so
+`cssVar` plus the `tailwind` spelling reaches both. Nothing else is needed.
+
+**Tailwind v3** keeps it in a JS object in `tailwind.config.js`, and the CSS
+custom properties are only values that object points at:
+
+```js
+colors: {
+  primary: {
+    DEFAULT: 'var(--primary-default)',   // → text-primary
+    darker:  'var(--primary-darker)',    // → text-primary-darker
+    soft_light: 'var(--primary-soft-light)',  // → bg-primary-soft_light
+  },
+}
+```
+
+Three things follow, and all three were measured on a real app
+(lotteryplus-frontend: 42 custom properties, 41 colour tokens, ~300 class uses):
+
+- **The object key is the name developers type, not the custom property.**
+  Renaming the CSS layer moves 25 occurrences and leaves ~300 class references
+  untouched, because they are generated from the key. The run reports success
+  and the developer-visible name has not moved.
+- **`DEFAULT` is a sentinel, not a name.** It means "the class with no suffix",
+  so `primary.DEFAULT` is what produces `text-primary` — 173 of that app's uses.
+  A convention that tidies it into `primary/default` produces a class nobody
+  writes. Put `**/DEFAULT` in `convention.ignore`.
+- **Keys can be snake_case**, and Tailwind takes them verbatim, so a class can
+  read `bg-primary-soft_light`. `toKebab` preserves `_` inside a segment, so the
+  spellings match — as long as the inventory records the key as it is written
+  rather than a tidied version of it.
+
+Moving a whole group in a v3 project is therefore a rename of the **object
+key**, which no derived spelling covers. The rename map's explicit `code` pairs
+do, with the `tailwindGroup` guard:
+
+```json
+{ "id": "css:primary/DEFAULT", "from": "primary/DEFAULT", "to": "primary/DEFAULT",
+  "code": [{ "from": "primary", "to": "brand", "guard": "tailwindGroup" }] }
+```
+
+That moves `text-primary`, `bg-primary-darker` and `bg-primary-soft_light`
+together, and leaves the JS key, prose, and identifiers like `primaryKey` alone
+— the key itself is a one-line hand edit, which is the right shape for a change
+that renames 300 call sites.
 ## Verifying
 
 ```bash
