@@ -2148,6 +2148,55 @@ test('a figma-source project without a fileKey is refused, not half-run', () => 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('capture-dart reads a ThemeExtension, where the modes live', () => {
+  // The semantic layer of a Flutter app is a ThemeExtension holding instance
+  // fields, not static constants — on a real app, 114 fields against 879 call
+  // sites, the biggest layer in the project. Instance fields are read only for
+  // that shape: `final X y;` in an ordinary class is usually a dependency.
+  const themed = [
+    'class AppColorsTheme extends ThemeExtension<AppColorsTheme> {',
+    '  final Color textDefault;',
+    '  final Color textOnPrimary;',
+    '  const AppColorsTheme({required this.textDefault, required this.textOnPrimary});',
+    '}',
+  ].join('\n');
+  const [cls] = dartTokenClasses(themed);
+  assert.equal(cls.name, 'AppColorsTheme');
+  assert.deepEqual(cls.members, ['textDefault', 'textOnPrimary']);
+
+  const ordinary = [
+    'class OrderRepository {',
+    '  final ApiClient client;',
+    '  final Logger log;',
+    '  OrderRepository(this.client, this.log);',
+    '}',
+  ].join('\n');
+  assert.deepEqual(dartTokenClasses(ordinary), [], 'a repository is not a token class');
+});
+
+test('one pair moves every spelling a ThemeExtension field has', () => {
+  // A ThemeExtension repeats each name across the declaration, the constructor,
+  // both theme instances, copyWith, lerp and every call site. They are all the
+  // same identifier, so the camel spelling with an identifier boundary reaches
+  // all of them — and stops at textDefaultAlt.
+  const replacer = buildReplacer(
+    spellingsFor({ from: 'text-default', to: 'content-default', kind: 'variable' }, { spellings: ['camel'], cssPrefix: '' }),
+  );
+  const moved = (src) => rewrite(src, replacer).text;
+  assert.equal(moved('  final Color textDefault;'), '  final Color contentDefault;');
+  assert.equal(moved('    required this.textDefault,'), '    required this.contentDefault,');
+  assert.equal(
+    moved('    textDefault: textDefault ?? this.textDefault,'),
+    '    contentDefault: contentDefault ?? this.contentDefault,',
+  );
+  assert.equal(
+    moved('    textDefault: Color.lerp(textDefault, other.textDefault, t)!,'),
+    '    contentDefault: Color.lerp(contentDefault, other.contentDefault, t)!,',
+  );
+  assert.equal(moved('  color: context.appColors.textDefault,'), '  color: context.appColors.contentDefault,');
+  assert.equal(moved('  final Color textDefaultAlt;'), '  final Color textDefaultAlt;');
+});
+
 test('capture-dart reads a class of constants, and the names round-trip', () => {
   // mobile-rizzup: one AppColors class, 53 members, 1,140 references across 334
   // files. The member name is what every reference spells, so that is what the

@@ -38,10 +38,16 @@ Set code.spellings to ["camel"] so one pair covers the declaration and the uses.
  */
 export function dartTokenClasses(source) {
   const classes = [];
-  const classRe = /(?:^|\n)\s*(?:abstract\s+)?class\s+(\w+)[^{]*\{/g;
+  const classRe = /(?:^|\n)\s*(?:abstract\s+)?class\s+(\w+)([^{]*)\{/g;
   let match;
   while ((match = classRe.exec(source))) {
     const name = match[1];
+    // A ThemeExtension holds its tokens as instance fields rather than static
+    // constants — it is the layer that has light and dark, and on a real app it
+    // was the biggest: 114 fields against 879 call sites. Instance fields are
+    // read ONLY for that shape, because `final X y;` in an ordinary class is
+    // usually a dependency, not a token.
+    const isThemeExtension = /extends\s+ThemeExtension\b/.test(match[2]);
     // Walk to the matching close brace so members of the next class are not
     // attributed to this one.
     let depth = 1;
@@ -55,7 +61,14 @@ export function dartTokenClasses(source) {
     const members = [...body.matchAll(/static\s+(?:const|final)\s+(?:[\w<>?,\s]+\s+)?(\w+)\s*=/g)].map(
       (m) => m[1],
     );
-    if (members.length) classes.push({ name, members });
+    if (isThemeExtension) {
+      // `final Color textDefault;` — a declaration, so it ends in `;` with no
+      // initialiser. That is what separates a field from a constructor default.
+      for (const field of body.matchAll(/(?:^|\n)\s*final\s+[\w<>?]+\s+(\w+)\s*;/g)) {
+        if (!members.includes(field[1])) members.push(field[1]);
+      }
+    }
+    if (members.length) classes.push({ name, members, isThemeExtension });
   }
   return classes;
 }

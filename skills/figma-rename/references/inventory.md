@@ -486,6 +486,23 @@ The class name is not a token. Renaming `AppColors` itself is an explicit `code`
 pair, because deciding that a bare identifier is a token namespace is a
 judgement rather than a derivation.
 
+A mature Flutter app usually has two or three of these layers, and they are
+worth separate passes:
+
+| file | shape | what it is |
+|---|---|---|
+| `app_palette.dart` | `static const Color` | primitive ramp — one value per name |
+| `colors.dart` | `static const Color` | theme-blind colours |
+| `app_colors.dart` | `ThemeExtension` with `final Color` fields | the semantic layer, where light and dark live |
+
+The capture reads instance fields **only** for a class that
+`extends ThemeExtension`, because `final X y;` in an ordinary class is a
+dependency rather than a token. On one real app that layer was the largest —
+114 fields against 879 call sites — and a ThemeExtension repeats each name
+across the declaration, the constructor, both theme instances, `copyWith`,
+`lerp` and every call site. They are all the same identifier, so `["camel"]`
+still moves them with one pair.
+
 Two things it will not do for you:
 
 - **Only definitions are captured**, never `var()` uses, so a token referenced
