@@ -1,4 +1,4 @@
-# Asking — the five rounds, in the user's own names
+# Asking — the six rounds, in the user's own names
 
 Step 0 of `figma-rename.md` is the whole of this file compressed to five
 sentences. Open this before the first `AskUserQuestion` of a run: the wording

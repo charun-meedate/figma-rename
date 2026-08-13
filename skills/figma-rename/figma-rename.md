@@ -514,7 +514,7 @@ drift, the rewrite renames things to spellings nothing generates.
 
 ## Reference files
 
-- `references/asking.md` — the five rounds of Step 0, worded for a person who has read none of this
+- `references/asking.md` — the six rounds of Step 0, worded for a person who has read none of this
 - `references/naming-convention.md` — the segment model, and writing it as rules
 - `references/suggest-engine.md` — naming a variable from its value, and what it refuses to guess
 - `references/inventory.md` — the read-only `use_figma` scripts, per kind
