@@ -15,7 +15,7 @@ const PRESETS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 
 const VALID_KINDS = new Set(['variable', 'component', 'componentSet', 'layer', 'textStyle', 'effectStyle', 'paintStyle']);
 
-const VALID_SPELLINGS = new Set(['figmaPath', 'cssVar', 'kebab', 'camel', 'camelMember', 'pascal', 'snake', 'dot']);
+const VALID_SPELLINGS = new Set(['figmaPath', 'cssVar', 'kebab', 'camel', 'camelMember', 'pascal', 'snake', 'dot', 'tailwind']);
 
 const DEFAULTS = {
   inventoryPath: 'rename/inventory.json',

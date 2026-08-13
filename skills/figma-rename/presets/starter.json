@@ -40,6 +40,7 @@
   },
 
   "code": {
+    "$comment_spellings": "Add \"tailwind\" on a Tailwind v4 project: it reaches token names inside utility classes (bg-…, text-…, border-…), which is where most references live there.",
     "spellings": ["figmaPath", "cssVar", "camel", "camelMember", "pascal"],
     "cssPrefix": "",
     "flutterPrefix": "App"

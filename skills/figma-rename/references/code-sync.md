@@ -45,6 +45,7 @@ selects which ones the codemod knows about:
 | `figmaPath` | `text/primary/default` | not inside a longer path |
 | `cssVar` | `--text-primary-default` | not inside a longer var |
 | `kebab` | `text-primary-default` | word boundary incl. `-` |
+| `tailwind` | `bg-text-primary-default`, `hover:border-text-primary-default` | Tailwind v4 turns a custom property into a utility class, so the token text sits behind `bg-` / `text-` / `border-` and friends. Off by default — on a project without Tailwind it would match any hyphenated word following one of those prefixes. Measured on one real app: 254 `var()` references against 1,242 through utility classes. |
 | `camel` | `textPrimaryDefault` | identifier boundary |
 | `camelMember` | `.primaryDefault` | **only after a dot** |
 | `pascal` | `TextPrimaryDefault` | identifier boundary |

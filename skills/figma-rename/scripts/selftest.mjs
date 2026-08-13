@@ -2054,6 +2054,45 @@ test('plan says when every naming decision was inherited, not chosen', () => {
   fs.rmSync(chosen, { recursive: true, force: true });
 });
 
+test('a Tailwind utility class is a place a token name lives', () => {
+  // Measured on a real project (insureplus-frontend): 531 tokens, 254 var()
+  // references, and 1,242 references through Tailwind utility classes. Without
+  // this spelling a rename rewrites the definitions and leaves every class name
+  // pointing at a token that no longer exists — and an unknown Tailwind class
+  // produces no style and no error, so the failure is silent and visual.
+  const rename = { from: 'foreground/base/action', to: 'surface/base/action', kind: 'variable' };
+  const pairs = spellingsFor(rename, { spellings: ['cssVar', 'kebab', 'tailwind'], cssPrefix: '' });
+  const replacer = buildReplacer(pairs);
+
+  const rewrites = (src) => rewrite(src, replacer).total > 0;
+  // reached through a colour utility, with or without variants
+  assert.ok(rewrites('className="bg-foreground-base-action"'));
+  assert.ok(rewrites('className="hover:bg-foreground-base-action"'));
+  assert.ok(rewrites('className="data-[state=on]:text-foreground-base-action"'));
+  assert.ok(rewrites("cn('border-foreground-base-action', x)"));
+  // a different token that merely starts the same way
+  assert.equal(rewrites('className="bg-foreground-base-action-hover"'), false);
+  // a utility that is not a colour utility, and a word that merely contains it
+  assert.equal(rewrites('className="my-foreground-base-action"'), false);
+  assert.equal(rewrites('const myforeground-base-action = 1'), false);
+  // the CSS side still works, from the same replacer
+  assert.ok(rewrites('  --foreground-base-action: #123;'));
+});
+
+test('one name can carry more than one guard', () => {
+  // cssVar and tailwind derive the same text with different guards. The
+  // replacer keyed only on the text, so the second guard was dropped without a
+  // word and the run reported a clean rewrite having touched half the sites.
+  const pairs = spellingsFor(
+    { from: 'a/b', to: 'c/d', kind: 'variable' },
+    { spellings: ['kebab', 'tailwind'], cssPrefix: '' },
+  );
+  assert.equal(pairs.length, 2, 'both spellings are produced');
+  assert.equal(pairs[0].from, pairs[1].from, 'and they share the text');
+  const replacer = buildReplacer(pairs);
+  assert.equal(replacer.pairs.length, 2, 'so both must survive into the regex');
+});
+
 test('every CLI answers --help without a config, and exits 0', () => {
   // --help was in the accepted-flag list and did nothing: it fell through to
   // config loading, so asking for help returned "rename.config.json not found".

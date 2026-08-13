@@ -41,6 +41,16 @@ const GUARDS = {
   cssvar: ['(?<![\\w-])', '(?![\\w-])'],
   kebab: ['(?<![\\w-])', '(?![\\w-])'],
   path: ['(?<![\\w/.-])', '(?![\\w/-])'],
+  // Tailwind writes a token into a class name behind a utility prefix:
+  // `--foreground-base-action` is used as `bg-foreground-base-action`. The
+  // kebab guard refuses that on purpose (a leading `-` usually means you are
+  // looking at the tail of a longer name), so utility classes need their own
+  // guard: assert a known prefix immediately before, and consume none of it —
+  // the replacer matches on the token text alone.
+  tailwind: [
+    '(?<=(?:^|[\\s"\'`:\\[(])(?:bg|text|border|fill|stroke|ring|outline|shadow|divide|accent|caret|decoration|placeholder|from|via|to)-)',
+    '(?![\\w-])',
+  ],
   member: ['(?<=\\.)', '(?![\\w$])'],
   dot: ['(?<![\\w.-])', '(?![\\w.-])'],
 };
@@ -79,6 +89,11 @@ export function spellingsFor(rename, opts = {}) {
       add('cssVar', 'cssvar', `--${cssPrefix}${toKebab(rename.from)}`, `--${cssPrefix}${toKebab(rename.to)}`);
     }
     if (want.has('kebab')) add('kebab', 'kebab', toKebab(rename.from), toKebab(rename.to));
+    // Tailwind v4 turns a custom property into a utility class, so the token
+    // text appears behind `bg-`, `text-`, `border-` and friends. Opt-in: on a
+    // project that does not use Tailwind this spelling would only ever match a
+    // hyphenated word that happens to follow one of those prefixes.
+    if (want.has('tailwind')) add('tailwind', 'tailwind', toKebab(rename.from), toKebab(rename.to));
     if (want.has('camel')) add('camel', 'ident', toCamel(rename.from), toCamel(rename.to));
     if (want.has('camelMember')) {
       add(
@@ -243,6 +258,7 @@ export function namespaceClassPairs(renames, { flutterPrefix = 'App', allTokenNa
  */
 export function buildReplacer(pairs) {
   const byFrom = new Map();
+  const byGuard = new Map();
   for (const pair of pairs) {
     const existing = byFrom.get(pair.from);
     if (existing && existing.to !== pair.to) {
@@ -263,8 +279,13 @@ export function buildReplacer(pairs) {
       );
     }
     if (!existing) byFrom.set(pair.from, pair);
+    // Same text, same target, different guard — `--x` reached as a CSS variable
+    // and as a Tailwind utility class, say. Both need a branch in the regex:
+    // keeping only the first silently drops the other, and the run reports a
+    // clean rewrite having touched half the call sites.
+    byGuard.set(`${pair.from}\u0000${pair.guard}`, pair);
   }
-  const unique = [...byFrom.values()].sort((a, b) => b.from.length - a.from.length);
+  const unique = [...byGuard.values()].sort((a, b) => b.from.length - a.from.length);
   if (unique.length === 0) return null;
 
   const source = unique
