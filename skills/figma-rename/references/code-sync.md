@@ -158,6 +158,56 @@ decides which artefact holds the token's identity.
 into a utility class. The name in the CSS *is* the name in the class, so
 `cssVar` plus the `tailwind` spelling reaches both. Nothing else is needed.
 
+### The shadcn shape: two layers in one file
+
+A v4 project scaffolded from shadcn does not put its tokens in `@theme`
+directly. It keeps raw values in `:root` and maps them into Tailwind's namespace
+separately:
+
+```css
+:root        { --border: #ddd; }
+@theme inline { --color-border: var(--border); }   /* → border-border, bg-border */
+```
+
+**Only the second layer names anything.** Tailwind reads `@theme`, strips the
+`--color-` namespace, and builds `border-border` from what is left. The `:root`
+entry is a value holder whose name nobody outside that file ever types.
+
+Capturing `:root` and switching on the `tailwind` spelling therefore breaks the
+project in a way that looks like it worked. Renaming `--border` to `--outline`
+rewrites the raw entry, follows the `var()` inside the alias, **and rewrites the
+class to `border-outline`** — for which no `--color-outline` exists. The class
+silently stops resolving; `--color-border` is still sitting there unused.
+
+The capture that works reads the `@theme` layer, records each name **without**
+the namespace, and declares the namespace as `cssPrefix`:
+
+```jsonc
+// name captured as "border", not "color/border"
+"code": { "cssPrefix": "color-", "spellings": ["cssVar", "tailwind"] }
+```
+
+Then one rename moves `--color-border` → `--color-outline` and every
+`border-border` / `bg-border` with it, leaves the `:root` value under its own
+name, and leaves `--color-border-line` and `border-border-line` alone. Renaming
+the `:root` entry as well is a private tidy-up with no user-visible effect —
+worth doing in the same commit, worth knowing it changes nothing outward.
+
+Two more things measured on that app (ticket-mutoday-frontend, 75 custom
+properties):
+
+- **Most of the set is not yours to rename.** 33 of the names are stock shadcn
+  (`background`, `card`, `popover`, `primary`, `muted`, `destructive`, `ring`,
+  `chart-1…5`, `sidebar-*`). They are the contract every shadcn component and
+  every future `npx shadcn add` is written against. Renaming them makes the next
+  component you pull in reference tokens you no longer have. Put them in
+  `convention.ignore`; the ones the team actually owns here are two.
+- **Fifteen names are a single word** — `main`, `card`, `border`, `ring`.
+  A convention with `structure.minSegments: 2` sends every one of them to
+  `needsReview`, which is 15 questions that all have the same answer. Decide the
+  rule before planning: either the standard accepts one-segment names for this
+  layer, or the whole layer is `ignore`d.
+
 **Tailwind v3** keeps it in a JS object in `tailwind.config.js`, and the CSS
 custom properties are only values that object points at:
 

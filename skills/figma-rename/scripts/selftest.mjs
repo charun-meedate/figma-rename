@@ -2145,6 +2145,34 @@ test('a figma-source project without a fileKey is refused, not half-run', () => 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('the shadcn two-layer shape renames the layer that names things', () => {
+  // Measured on ticket-mutoday-frontend. shadcn keeps raw values in :root and
+  // maps them into Tailwind's namespace in @theme inline; only the second layer
+  // names anything. Capturing :root and enabling `tailwind` rewrites the class
+  // to a name no theme entry defines — it stops resolving, silently, while the
+  // old theme entry sits there unused.
+  const opts = { spellings: ['cssVar', 'tailwind'], cssPrefix: '' };
+  const wrong = buildReplacer(spellingsFor({ from: 'border', to: 'outline', kind: 'variable' }, opts));
+  assert.equal(
+    rewrite('className="border-border"', wrong).text,
+    'className="border-outline"',
+    'this is the breakage: the class moves but --color-outline does not exist',
+  );
+  assert.equal(rewrite('  --color-border: var(--border);', wrong).text, '  --color-border: var(--outline);');
+
+  // The capture that works reads @theme, drops the namespace from the name, and
+  // declares it as cssPrefix instead.
+  const right = buildReplacer(
+    spellingsFor({ from: 'border', to: 'outline', kind: 'variable' }, { ...opts, cssPrefix: 'color-' }),
+  );
+  assert.equal(rewrite('  --color-border: var(--border);', right).text, '  --color-outline: var(--border);');
+  assert.equal(rewrite('className="border-border"', right).text, 'className="border-outline"');
+  assert.equal(rewrite('className="bg-border"', right).text, 'className="bg-outline"');
+  // the raw value keeps its own name, and neighbours that merely start alike are safe
+  assert.equal(rewrite('  --border: #ddd;', right).text, '  --border: #ddd;');
+  assert.equal(rewrite('className="border-border-line"', right).text, 'className="border-border-line"');
+});
+
 test('a whole Tailwind group can move while its suffixes stay', () => {
   // Tailwind v3 keeps the token identity in a JS object, so the name developers
   // type is the object key. Measured on lotteryplus-frontend: 296 of ~300 class

@@ -127,7 +127,7 @@ node skills/figma-rename/scripts/selftest.mjs
 ```
 
 รันสคริปต์จริงบนโปรเจกต์ชั่วคราวในโฟลเดอร์ temp ไม่แตะโปรเจกต์ไหน
-ต้องขึ้น `171 passed, 0 failed`
+ต้องขึ้น `172 passed, 0 failed`
 
 สถานะการทดสอบทั้งหมดบันทึกไว้ที่เดียว ใน
 [docs/REFERENCE.md → สถานะการทดสอบ](docs/REFERENCE.md#สถานะการทดสอบ)
