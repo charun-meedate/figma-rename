@@ -16,6 +16,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { definedProperties, toTokenName } from './capture-css.mjs';
+import { dartTokenClasses, memberToTokenName } from './capture-dart.mjs';
+import { toCamel as toCamelForTest } from './lib/naming.mjs';
 import { buildReplacer, namespaceClassPairs, rewrite, spellingsFor } from './lib/codemod.mjs';
 import { classifyComponent, findNameCollisions, suggestComponentName } from './lib/classify.mjs';
 import { caseSegment, compileConvention, compileConventions, normalizeName, proposeName } from './lib/convention.mjs';
@@ -2144,6 +2146,36 @@ test('a figma-source project without a fileKey is refused, not half-run', () => 
   assert.match(result.out, /figma\.fileKey is required/);
   assert.match(result.out, /"source": "code"/, 'and it names the alternative');
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('capture-dart reads a class of constants, and the names round-trip', () => {
+  // mobile-rizzup: one AppColors class, 53 members, 1,140 references across 334
+  // files. The member name is what every reference spells, so that is what the
+  // inventory records — and it has to survive the trip back through toCamel or
+  // the codemod looks for a spelling that was never in the file.
+  const source = [
+    "import 'package:flutter/material.dart';",
+    '',
+    'class AppColors {',
+    '  AppColors._();',
+    '',
+    '  static const bgColor = Color(0xffF0F5F9);',
+    '  static const textSecondaryPlus = Color(0xff475467);',
+    '  static const bgBlack900 = Color(0xff000000);',
+    '}',
+    '',
+    'class NotTokens {',
+    '  void paint() {}',
+    '}',
+  ].join('\n');
+  const classes = dartTokenClasses(source);
+  assert.equal(classes.length, 1, 'a class with no constants is not a token class');
+  assert.equal(classes[0].name, 'AppColors');
+  assert.deepEqual(classes[0].members, ['bgColor', 'textSecondaryPlus', 'bgBlack900']);
+
+  for (const member of ['bgColor', 'textSecondaryPlus', 'bgBlack900', 'bg50', 'redBgBrand400']) {
+    assert.equal(toCamelForTest(memberToTokenName(member)), member, `${member} must round-trip`);
+  }
 });
 
 test('capture-css finds definitions written under a comment', () => {

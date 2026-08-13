@@ -12,6 +12,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { COMMON_FLAGS, parseArgs } from './lib/config.mjs';
 
@@ -115,7 +116,12 @@ async function main() {
   console.log('[capture-css] next: node plan.mjs');
 }
 
-main().catch((err) => {
-  console.error(`[capture-css] ${err.message}`);
-  process.exit(1);
-});
+// Exported for tests; only run as a command when invoked as one. Without this,
+// importing this file executes main(), which fails on the missing argument and
+// calls process.exit — taking its importer down with it.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(`[capture-css] ${err.message}`);
+    process.exit(1);
+  });
+}

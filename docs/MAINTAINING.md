@@ -58,6 +58,7 @@ cp "$S/rename.config.example.json" rename.config.json    # ครั้งเด
 # 1. inventory — ขั้นนี้รันเองไม่ได้ ต้องผ่าน use_figma (ดู references/inventory.md)
 
 node "$S/capture-css.mjs" src/styles.css   # source: code — inventory from CSS
+node "$S/capture-dart.mjs" lib/styles/app_colors.dart   # …or from a Dart token class
 
 # 2. เสนอชื่อใหม่
 node "$S/plan.mjs"                          # ทุก kind ใน config.kinds
@@ -204,7 +205,7 @@ convention ทั้งสองครั้งคำแนะนำถูกต
 มีสองอย่างที่ต้องผ่าน และเป็นคนละเรื่องกัน:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 174 เคส — สคริปต์ยังถูก
+node skills/figma-rename/scripts/selftest.mjs     # 175 เคส — สคริปต์ยังถูก
 ```
 
 กับ **eval** ใน `skills/figma-rename/evals/` ซึ่งทดสอบว่า *agent เดินกระบวนการถูก* —

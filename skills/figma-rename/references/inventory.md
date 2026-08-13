@@ -463,6 +463,29 @@ Tailwind reads, capture the naming layer only:
 node "$S/capture-css.mjs" src/styles.css --layer color- --flat
 ```
 
+### A Flutter app whose tokens are a Dart class
+
+```bash
+node "$S/capture-dart.mjs" lib/presentation/styles/app_colors.dart --dry-run
+```
+
+It records the **member** name, not `Class.member`, because that one name covers
+both places the name appears:
+
+```dart
+static const textSecondaryPlus = …     // the declaration
+color: AppColors.textSecondaryPlus,    // 1,140 of these, in one real app
+```
+
+Set `code.spellings` to `["camel"]` and a single pair moves both. Recording
+`AppColors/textSecondaryPlus` instead looks tidier and is worse: `camelMember`
+then matches only after a dot, so every use moves and the declaration stays —
+which at least fails loudly, at the compiler, rather than silently.
+
+The class name is not a token. Renaming `AppColors` itself is an explicit `code`
+pair, because deciding that a bare identifier is a token namespace is a
+judgement rather than a derivation.
+
 Two things it will not do for you:
 
 - **Only definitions are captured**, never `var()` uses, so a token referenced
