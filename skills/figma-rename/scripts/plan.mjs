@@ -22,6 +22,7 @@
 // than a confident guess.
 
 import { COMMON_FLAGS, VALID_KINDS, loadConfig, parseArgs } from './lib/config.mjs';
+import { detectStack, stackAdvice } from './lib/detect.mjs';
 import { compileConventions, compileGlob, matchesAny, proposeName } from './lib/convention.mjs';
 import { COMPONENT_KINDS } from './lib/convention.mjs';
 import { findNameCollisions, suggestComponentName } from './lib/classify.mjs';
@@ -433,6 +434,17 @@ async function main() {
   }
 
   const total = map.batches.reduce((n, b) => n + b.renames.length, 0);
+  // What the repo looks like, against what the config asks for. Suggests only:
+  // six real projects needed six different spelling sets, and the wrong set
+  // rewrites the definitions, leaves the call sites, and reports success.
+  const shapes = await detectStack(config.rootDir);
+  const advice = stackAdvice(shapes, config.code);
+  for (const line of advice) console.log(`[plan] NOTE: ${line}`);
+  if (advice.length) {
+    const withCapture = shapes.find((sh) => sh.capture);
+    if (withCapture) console.log(`[plan]   capture for that shape: node ${withCapture.capture}`);
+  }
+
   // A config that says "code" while still carrying a file key is telling two
   // stories about where the names live, and that is exactly the state a team
   // drifts into: a Figma file that still exists next to tokens maintained by

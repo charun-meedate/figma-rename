@@ -31,6 +31,7 @@ capture-css.mjs — build an inventory from CSS custom properties
                       Right when hierarchy is not encoded in the name at all.
   --scope <name>      the batch name to record (default: the file's basename)
   --out <path>        where to write (default: rename/inventory.json)
+  --config <path>     use a config other than ./rename.config.json
   --dry-run           print what was found, write nothing
 
 Definitions only — a var() reference is a use, not a definition.
@@ -111,7 +112,7 @@ async function main() {
 
   const out = args.out ?? 'rename/inventory.json';
   await fs.mkdir(path.dirname(out), { recursive: true });
-  await fs.writeFile(out, `${JSON.stringify({ capturedFrom: files, entries }, null, 1)}\n`);
+  await fs.writeFile(out, `${JSON.stringify({ capturedAt: new Date().toISOString(), capturedFrom: files, entries }, null, 1)}\n`);
   console.log(`[capture-css] wrote ${out}`);
   console.log('[capture-css] next: node plan.mjs');
 }

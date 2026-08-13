@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { definedProperties, toTokenName } from './capture-css.mjs';
 import { dartTokenClasses, memberToTokenName } from './capture-dart.mjs';
+import { detectStack, stackAdvice } from './lib/detect.mjs';
 import { frozenStatuses, ladderFor, sourceOf, validateShape } from './lib/map.mjs';
 import { toCamel as toCamelForTest } from './lib/naming.mjs';
 import { buildReplacer, namespaceClassPairs, rewrite, spellingsFor } from './lib/codemod.mjs';
@@ -981,8 +982,16 @@ test('naming.mjs matches its lock file', () => {
 });
 
 test('naming.mjs is identical to the figma-token-export copy when both are present', () => {
-  const sibling = path.resolve(HERE, '../../figma-token-export/scripts/lib/naming.mjs');
-  if (!fs.existsSync(sibling)) {
+  // Post-split layout: the sibling is its own repo next to this one. The old
+  // path was the combined-repo shape, so this check quietly skipped even when
+  // both repos WERE checked out side by side — the one arrangement it was
+  // written for. Both are tried, so it works from either layout.
+  const candidates = [
+    path.resolve(HERE, '../../../../figma-token-export/skills/figma-token-export/scripts/lib/naming.mjs'),
+    path.resolve(HERE, '../../figma-token-export/scripts/lib/naming.mjs'),
+  ];
+  const sibling = candidates.find((p) => fs.existsSync(p));
+  if (!sibling) {
     console.log('       (no sibling checkout — the lock file above is the real guard)');
     return;
   }
@@ -2128,6 +2137,80 @@ function reviewedBatch(dir) {
   return id;
 }
 
+test('detectStack tells the shapes apart, including the two Tailwind v4s', async () => {
+  // Two v4 apps needed different captures because one was scaffolded from
+  // shadcn. Framework and version are not enough to tell them apart — the
+  // presence of an alias layer is.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-detect-'));
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+
+  fs.writeFileSync(path.join(dir, 'src/a.css'), '@theme { --color-primary: #123; }\n');
+  let shapes = await detectStack(dir);
+  assert.equal(shapes[0].shape, 'tailwind-v4');
+  assert.deepEqual(shapes[0].spellings, ['cssVar', 'tailwind']);
+  assert.doesNotMatch(shapes[0].capture, /--layer/, 'a one-layer file needs no --layer');
+
+  // The shadcn shape: values in :root, names in @theme inline.
+  fs.writeFileSync(
+    path.join(dir, 'src/a.css'),
+    ':root { --primary: #123; }\n@theme inline { --color-primary: var(--primary); }\n',
+  );
+  shapes = await detectStack(dir);
+  assert.equal(shapes[0].shape, 'tailwind-v4-shadcn');
+  assert.match(shapes[0].capture, /--layer color- --flat/);
+  assert.match(shapes[0].note, /only @theme names anything/);
+
+  // v3 keeps names in a JS object, which no derived spelling reaches.
+  fs.writeFileSync(path.join(dir, 'tailwind.config.js'), 'module.exports = {};\n');
+  shapes = await detectStack(dir);
+  assert.ok(shapes.some((sh) => sh.shape === 'tailwind-v3'));
+  assert.match(shapes.find((sh) => sh.shape === 'tailwind-v3').note, /tailwindGroup/);
+
+  // Flutter is decided by pubspec, not by any stylesheet.
+  fs.writeFileSync(path.join(dir, 'pubspec.yaml'), 'name: app\n');
+  shapes = await detectStack(dir);
+  const flutter = shapes.find((sh) => sh.shape === 'flutter');
+  assert.deepEqual(flutter.spellings, ['camel']);
+  assert.match(flutter.capture, /capture-dart/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the stack advice stays quiet when the config already covers the shape', () => {
+  const shapes = [{ shape: 'tailwind-v4', why: 'x', spellings: ['cssVar', 'tailwind'], capture: 'c' }];
+  assert.deepEqual(stackAdvice(shapes, { spellings: ['cssVar', 'tailwind', 'camel'] }), []);
+  const advice = stackAdvice(shapes, { spellings: ['cssVar'] });
+  assert.equal(advice.length, 1);
+  assert.match(advice[0], /\["tailwind"\]/, 'it names only what is missing');
+});
+
+test('plan says which shape it sees when the spellings do not cover it', () => {
+  const dir = codeSourceProject({ code: {
+    roots: ['.'], include: ['app/**'], exclude: [], generated: [],
+    spellings: ['cssVar'], cssPrefix: '',
+  } });
+  // Make the fixture look like a v4 project rather than plain CSS.
+  fs.writeFileSync(path.join(dir, 'app/theme.css'), '@theme { --foreground-base-action: #123; }\n');
+  const result = run('plan.mjs', [], dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /NOTE: looks like tailwind-v4/);
+  assert.match(result.out, /\["tailwind"\]/);
+  assert.match(result.out, /capture for that shape/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('capture scripts record when the inventory was taken', () => {
+  // `capturedAt` was read by loadInventory and written by nothing, so a stale
+  // code-source inventory left no trace at all.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-capat-'));
+  fs.writeFileSync(path.join(dir, 'a.css'), ':root{--x-y:#123}\n');
+  const result = run('capture-css.mjs', ['a.css'], dir);
+  assert.equal(result.ok, true, result.out);
+  const written = JSON.parse(fs.readFileSync(path.join(dir, 'rename/inventory.json'), 'utf8'));
+  assert.match(written.capturedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(written.capturedFrom, ['a.css']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('plan stamps the source into the map, and an old map still reads as figma', () => {
   const dir = codeSourceProject();
   run('plan.mjs', [], dir);
@@ -2604,7 +2687,7 @@ test('every CLI answers --help without a config, and exits 0', () => {
   // It also forced the manual to carry every flag list itself, at a token cost
   // paid on every run rather than only when someone asks.
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-help-'));
-  for (const cli of ['plan.mjs', 'review.mjs', 'check.mjs', 'emit-figma.mjs', 'apply-code.mjs']) {
+  for (const cli of ['plan.mjs', 'review.mjs', 'check.mjs', 'emit-figma.mjs', 'apply-code.mjs', 'capture-css.mjs', 'capture-dart.mjs']) {
     const result = run(cli, ['--help'], empty);
     assert.equal(result.ok, true, `${cli} --help should exit 0, got: ${result.out}`);
     assert.doesNotMatch(result.out, /not found|Could not read/, `${cli} --help must not need a config`);

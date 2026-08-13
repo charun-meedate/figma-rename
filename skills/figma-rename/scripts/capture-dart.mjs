@@ -21,6 +21,7 @@ capture-dart.mjs — build an inventory from a Dart token class
   --class <Name>   only this class (default: every class in the file)
   --scope <name>   the batch name to record (default: the class name)
   --out <path>     where to write (default: rename/inventory.json)
+  --config <path>  use a config other than ./rename.config.json
   --dry-run        print what was found, write nothing
 
 Records the MEMBER name, because that is what every reference spells:
@@ -130,7 +131,7 @@ async function main() {
 
   const out = args.out ?? 'rename/inventory.json';
   await fs.mkdir(path.dirname(out), { recursive: true });
-  await fs.writeFile(out, `${JSON.stringify({ capturedFrom: files, entries }, null, 1)}\n`);
+  await fs.writeFile(out, `${JSON.stringify({ capturedAt: new Date().toISOString(), capturedFrom: files, entries }, null, 1)}\n`);
   console.log(`[capture-dart] wrote ${out}`);
   console.log('[capture-dart] next: set code.spellings to ["camel"], then node plan.mjs');
 }
