@@ -216,7 +216,7 @@ louder.**
 Two things have to pass, and they check different things:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 196 cases — the scripts are right
+node skills/figma-rename/scripts/selftest.mjs     # 198 cases — the scripts are right
 ```
 
 and the **evals** in `skills/figma-rename/evals/`, which check that the *agent

@@ -73,6 +73,38 @@ export function crossCheck(config, tokens, renames = []) {
       );
     }
   }
+  // ---- 1b. Tailwind: declared by the generator, and it changes the spelling --
+  //
+  // `tailwind: 3 | 4` in the web target says the generator emits utilities. Two
+  // things follow, and both were measured against the real generator rather
+  // than reasoned about:
+  //
+  //   token  color/surface/primary
+  //   :root  --surface-primary                 ← the leading namespace is dropped
+  //   @theme --color-surface-primary           ← what `cssVar` matches
+  //   class  bg-surface-primary                ← what hand-written code types
+  //
+  // So on a generated project the class-visible text is the token name MINUS
+  // its leading namespace segment, while the `tailwind` spelling looks for the
+  // full kebab. It would match nothing in hand-written code, and report that as
+  // "matched nothing" rather than as a problem.
+  if (web?.tailwind) {
+    const spellings = config.code.spellings ?? [];
+    if (!spellings.includes('tailwind')) {
+      warnings.push(
+        `the web target declares \`tailwind: ${web.tailwind}\`, so the generator emits utility ` +
+          'classes, but code.spellings has no "tailwind" — every class reference in hand-written ' +
+          'code would be left behind while the run reports success.',
+      );
+    }
+    notes.push(
+      'generated Tailwind: the utility drops the token\'s leading namespace ' +
+        '(`color/surface/primary` → `bg-surface-primary`), while the `tailwind` spelling looks for ' +
+        'the full `color-surface-primary`. For classes in hand-written code, promote an explicit ' +
+        '`code` pair with guard "tailwind" using the name as it appears in the class.',
+    );
+  }
+
   const flutter = targets.find((t) => t.type === 'flutter');
   if (flutter) {
     // Note the asymmetry: `prefix` there, `flutterPrefix` here.

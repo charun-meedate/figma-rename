@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { definedProperties, toTokenName } from './capture-css.mjs';
 import { dartTokenClasses, memberToTokenName } from './capture-dart.mjs';
 import { detectStack, stackAdvice } from './lib/detect.mjs';
+import { crossCheck, loadTokensConfig } from './lib/handoff.mjs';
 import { namespaceClassPairs as nsPairsForTest } from './lib/codemod.mjs';
 import { frozenStatuses, ladderFor, sourceOf, validateShape } from './lib/map.mjs';
 import { toCamel as toCamelForTest } from './lib/naming.mjs';
@@ -2204,6 +2205,62 @@ test('detectStack tells the shapes apart, including the two Tailwind v4s', async
   const flutter = shapes.find((sh) => sh.shape === 'flutter');
   assert.deepEqual(flutter.spellings, ['camel']);
   assert.match(flutter.capture, /capture-dart/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a declared Tailwind major beats anything scanned from the stylesheets', async () => {
+  // tokens.config.json naming the major is the generator's own statement about
+  // what it emits. It is also the only way to know the version before the
+  // generated CSS has been committed for the first time.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-decl-'));
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  // A stylesheet that would otherwise read as plain v4.
+  fs.writeFileSync(path.join(dir, 'src/styles.css'), '@theme { --color-x: #123; }\n');
+  fs.writeFileSync(
+    path.join(dir, 'tokens.config.json'),
+    JSON.stringify({ targets: [{ type: 'web', out: 'src/tokens', cssPrefix: '', tailwind: 4 }] }),
+  );
+  const shapes = await detectStack(dir);
+  assert.equal(shapes.length, 1, 'the declaration settles it — no need to guess further');
+  assert.equal(shapes[0].shape, 'tailwind-v4-generated');
+  assert.match(shapes[0].why, /tokens\.config\.json declares/);
+  assert.match(shapes[0].note, /drops the leading namespace/);
+
+  // A malformed tokens.config.json must not stop the scan from happening.
+  fs.writeFileSync(path.join(dir, 'tokens.config.json'), '{ not json');
+  const fallback = await detectStack(dir);
+  assert.equal(fallback[0].shape, 'tailwind-v4', 'a broken config falls back to reading the file');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a generated Tailwind project is told its classes are spelled differently', async () => {
+  // Measured against the real generator: token color/surface/primary produces
+  // :root --surface-primary, @theme --color-surface-primary, class
+  // bg-surface-primary. The `tailwind` spelling looks for the full kebab, so on
+  // a generated project it reaches no hand-written class at all.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-twdecl-'));
+  fs.writeFileSync(
+    path.join(dir, 'tokens.config.json'),
+    JSON.stringify({ targets: [{ type: 'web', out: 'src/tokens', cssPrefix: '', tailwind: 4 }] }),
+  );
+  const tokens = await loadTokensConfig({ rootDir: dir, code: { tokensConfig: path.join(dir, 'tokens.config.json') } });
+  assert.ok(tokens, 'the config should load');
+
+  const without = crossCheck(
+    { rootDir: dir, code: { cssPrefix: '', spellings: ['cssVar'], generated: ['src/tokens/**'] } },
+    tokens,
+    [],
+  );
+  assert.ok(without.warnings.some((w) => /declares `tailwind: 4`/.test(w)));
+  assert.ok(without.notes.some((n) => /drops the token's leading namespace/.test(n)));
+
+  const with_ = crossCheck(
+    { rootDir: dir, code: { cssPrefix: '', spellings: ['cssVar', 'tailwind'], generated: ['src/tokens/**'] } },
+    tokens,
+    [],
+  );
+  assert.equal(with_.warnings.filter((w) => /tailwind: 4/.test(w)).length, 0, 'the warning is about the missing spelling');
+  assert.ok(with_.notes.some((n) => /drops the token's leading namespace/.test(n)), 'the note stands either way');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

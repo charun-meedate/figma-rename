@@ -158,6 +158,7 @@ The prose below explains each shape. This is the lookup, from six real projects:
 | shape | how you know | capture | `code.spellings` |
 |---|---|---|---|
 | Figma upstream, web/Flutter generated | a `tokens.config.json` and generated files | `use_figma` read scripts | `figmaPath, cssVar, camel, camelMember, pascal` |
+| …**with `tailwind: 3\|4` declared** | that key in the web target | `use_figma` read scripts | the above **plus `tailwind`** — and see the note below |
 | Tailwind **v4** | `@theme` in a stylesheet | `capture-css.mjs <file>` | `cssVar, tailwind` |
 | Tailwind v4 from **shadcn** | `@theme inline` mapping `var(--x)` values from `:root` | `capture-css.mjs <file> --layer color- --flat` | `cssVar, tailwind` |
 | Tailwind **v3** | `tailwind.config.js` | `capture-css.mjs <the value file>` | `cssVar` + an explicit `code` pair with guard `tailwindGroup` |
@@ -166,6 +167,23 @@ The prose below explains each shape. This is the lookup, from six real projects:
 
 `plan.mjs` prints a NOTE when it recognises the shape and the config does not
 cover it. It suggests only — writing the config is a decision.
+
+**Generated Tailwind spells its classes differently from its tokens.** Measured
+against the generator rather than reasoned about:
+
+```
+token   color/surface/primary
+:root   --surface-primary          ← the leading namespace is dropped
+@theme  --color-surface-primary    ← what `cssVar` matches
+class   bg-surface-primary         ← what hand-written code types
+```
+
+`cssVar` covers the `@theme` line, and the generated files are excluded from the
+codemod anyway because the generator rewrites them. What is left uncovered is
+the **class in hand-written code**: the `tailwind` spelling looks for the full
+`color-surface-primary`, so it matches nothing there. Promote an explicit `code`
+pair with guard `tailwind`, using the name as the class actually spells it.
+`check.mjs` says this out loud when `tokens.config.json` declares the major.
 
 Two traps the table cannot carry:
 

@@ -55,6 +55,33 @@ async function findStylesheets(rootDir, depth = 3) {
 export async function detectStack(rootDir) {
   const shapes = [];
 
+  // A declaration beats a heuristic. `tokens.config.json` naming the Tailwind
+  // major is the generator's own statement about what it emits — stronger than
+  // anything guessed from scanning stylesheets, and the only way to know the
+  // version when the generated CSS is not committed yet.
+  const declared = await read(path.join(rootDir, 'tokens.config.json'));
+  if (declared) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(declared);
+    } catch {
+      /* a broken tokens.config.json is check.mjs's problem, not this one */
+    }
+    const web = (parsed?.targets ?? []).find((t) => t.type === 'web');
+    if (web?.tailwind) {
+      shapes.push({
+        shape: `tailwind-v${web.tailwind}-generated`,
+        why: `tokens.config.json declares tailwind: ${web.tailwind}`,
+        spellings: ['cssVar', 'tailwind'],
+        capture: null,
+        note:
+          'the utility drops the leading namespace (`color/surface/primary` → `bg-surface-primary`), ' +
+          'so classes in hand-written code need an explicit `code` pair — check.mjs says so too',
+      });
+      return shapes;
+    }
+  }
+
   if (await exists(path.join(rootDir, 'pubspec.yaml'))) {
     shapes.push({
       shape: 'flutter',
