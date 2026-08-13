@@ -392,10 +392,16 @@ async function checkAfter(config, renames, allTokenNames, noClasses = false) {
     });
   }
 
+  // The summary says what was actually checked, not what a reader would like it
+  // to mean. This scans for the spellings `code.spellings` derives — a codebase
+  // that spells a token some other way is invisible to it, and reporting that as
+  // "no old name survives" is the politest kind of lie this tool can tell.
   report(
     leftovers.map((l) => `stale name still in code — ${l}`),
     [],
-    `${files.length} file(s) scanned for ${pairs.length} old spelling(s) from applied batch(es)`,
+    `${files.length} file(s) scanned for ${pairs.length} old spelling(s) from applied batch(es) ` +
+      `— spellings from code.spellings (${(config.code.spellings ?? []).join(', ') || 'none'}); ` +
+      'a name spelled some other way is not covered',
   );
 }
 

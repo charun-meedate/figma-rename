@@ -2383,6 +2383,21 @@ test('code-source: check --after says so while the written batch is still unmark
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('check --after says which spellings its green covers', () => {
+  // An eval run watched it pass while a stale symbol sat in the repo, spelled a
+  // way `code.spellings` does not derive. The scan was correct; the summary was
+  // the problem — "no old name survives" is not what it proved.
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  run('apply-code.mjs', ['--batch', id, '--write'], dir);
+  run('review.mjs', ['mark', id, '--applied'], dir);
+  const result = run('check.mjs', ['--after'], dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /spellings from code\.spellings \(cssVar, tailwind\)/);
+  assert.match(result.out, /spelled some other way is not covered/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('code-source: check --after sees an applied batch and catches a stale spelling', () => {
   const dir = codeSourceProject();
   const id = reviewedBatch(dir);
