@@ -426,6 +426,18 @@ async function main() {
   }
 
   const total = map.batches.reduce((n, b) => n + b.renames.length, 0);
+  // A config that says "code" while still carrying a file key is telling two
+  // stories about where the names live, and that is exactly the state a team
+  // drifts into: a Figma file that still exists next to tokens maintained by
+  // hand. Which one wins is a decision, not a default.
+  if (config.source === 'code' && config.figma?.fileKey) {
+    console.log(
+      `[plan] NOTE: source is "code" but figma.fileKey is still set (${config.figma.fileKey}). ` +
+        'This run will not touch Figma, so that file keeps its old names — decide whether it is ' +
+        'documentation or the source of truth before the two drift further apart.',
+    );
+  }
+
   // A config that inherits a preset and overrides none of the format settings
   // was never discussed with anyone. The plan below will still look decided —
   // that is the problem. Reported from a real run: the skill produced 20 names

@@ -2055,6 +2055,35 @@ test('plan says when every naming decision was inherited, not chosen', () => {
   fs.rmSync(chosen, { recursive: true, force: true });
 });
 
+test('a config claiming both sources is called out, not quietly obeyed', () => {
+  // The state a team actually drifts into: a Figma file that still exists, next
+  // to tokens maintained by hand. Renaming only one keeps two standards alive,
+  // and the run has no way to know which one the team means to win.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-both-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'app'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      source: 'code',
+      figma: { fileKey: 'STILL-HERE' },
+      kinds: ['variable'],
+      convention: { segmentCase: 'kebab', rules: [{ match: 'foreground/**', to: 'surface/$1' }] },
+      code: { roots: ['.'], include: ['app/**'], exclude: [], generated: [] },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({ entries: [{ kind: 'variable', id: 'css:foreground/base/action', name: 'foreground/base/action', scope: 'a.css' }] }),
+  );
+  fs.writeFileSync(path.join(dir, 'app/a.css'), ':root{--foreground-base-action:#123}\n');
+  const result = run('plan.mjs', [], dir);
+  assert.equal(result.ok, true, 'a warning, not a refusal — the config may be deliberate');
+  assert.match(result.out, /STILL-HERE/);
+  assert.match(result.out, /documentation or the source of truth/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a project with no Figma behind it can still rename to the standard', () => {
   // Some projects hand-write their tokens — insureplus-frontend has 531 CSS
   // custom properties and nothing upstream. The naming standard still applies;

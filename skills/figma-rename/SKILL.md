@@ -58,6 +58,9 @@ running `plan.mjs`.
 Use `AskUserQuestion`, one round at a time, your recommendation first, **in the
 language the user is writing in**:
 
+0. **Where do the names live today?** Figma upstream → `source: "figma"` and a
+   file key. Hand-written in the repo → `source: "code"`, no Figma leg. Both,
+   drifting apart → decide which one wins before renaming either.
 1. **Where does the standard come from?** Team has one → `extends` their file.
    No standard → `extends: "starter"`. This decides everything downstream.
 2. **What gets renamed?** Tokens / components / layers / styles, which

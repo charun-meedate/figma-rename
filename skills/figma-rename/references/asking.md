@@ -7,6 +7,7 @@ what decide whether the answer is a decision or a shrug.
 
 ## Contents
 
+- Round 0 — where do the names live today?
 - Round 1 — is there already a standard?
 - Round 2 — what is in scope
 - Round 3 — the format, shown with their own names
@@ -15,6 +16,28 @@ what decide whether the answer is a decision or a shrug.
 - Say where the run is going
 
 ---
+
+### Round 0 — where do the names live today?
+
+**"Are these names kept in Figma, or written by hand in the repo?"**
+
+Ask this before asking for a Figma link, because one of the answers means there
+is no Figma link to ask for. It sets `source`, and `source` decides whether the
+run has a Figma leg at all.
+
+| answer | `source` | what changes |
+|---|---|---|
+| Figma is upstream; the code follows it | `"figma"` (default) | the full loop, `figma.fileKey` required |
+| the tokens are hand-written here, nothing behind them | `"code"` | same standard, same review, no `emit-figma` step |
+| there is a Figma file *and* hand-written tokens that drift apart | ask which one wins | see below |
+
+The third answer is the common one in a team that has been shipping for a while,
+and it is not a config question — it is a decision about which artefact is the
+source of truth. Say it plainly: **renaming both by hand keeps two standards
+alive.** Either the code is regenerated from Figma after the rename (`source:
+"figma"` plus `figma-token-export`), or Figma is treated as documentation and
+the repo is the source (`source: "code"`). Picking neither is what produced the
+drift in the first place.
 
 ### Round 1 — is there already a standard?
 

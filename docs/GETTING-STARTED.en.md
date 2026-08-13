@@ -8,7 +8,7 @@
 - [One thing to understand before starting](#one-thing-to-understand-before-starting)
 - [One-time setup](#one-time-setup)
 - [First run — tell Claude what to rename](#first-run-tell-claude-what-to-rename)
-- [Claude asks in five rounds — answer what you know](#claude-asks-in-five-rounds-answer-what-you-know)
+- [Claude asks in rounds — answer what you know](#claude-asks-in-rounds--answer-what-you-know)
 - [Claude stops twice — do not click through](#claude-stops-twice-do-not-click-through)
 - [What happens when you approve](#what-happens-when-you-approve)
 - [If something goes wrong](#if-something-goes-wrong)
@@ -74,11 +74,16 @@ once**:
 
 ---
 
-## Claude asks in five rounds — answer what you know
+## Claude asks in rounds — answer what you know
 
 Every question arrives with **Claude's own recommendation first**. "Go with
 your suggestion" is always a valid answer; you do not need the vocabulary
 before you can start.
+
+**Round 0 — where do these names live?** Kept in Figma with the code following ·
+hand-written in the repo with nothing behind them · or both, and drifting apart.
+Asked before the Figma link, because one answer means there is no link to ask
+for — and "both" is a decision about which side is the source, not a setting.
 
 **Round 1 — where does the standard come from?** (before anything is touched)
 
