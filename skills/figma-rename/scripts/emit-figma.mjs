@@ -119,6 +119,20 @@ async function main() {
     throw new Error(`"${batch.id}" has no accepted rows — every one was rejected. Nothing to emit.`);
   }
 
+  // The last gate before a wasted round trip. Ids like `css:--primary` come
+  // from capture-css/capture-dart; the generated script would resolve every one
+  // of them to null and throw inside Figma — correct, but only after someone
+  // pasted it. The mismatch is almost always a config that still says "figma".
+  const fromCode = rows.filter((r) => /^(css|dart):/.test(String(r.id)));
+  if (fromCode.length) {
+    throw new Error(
+      `${fromCode.length} of ${rows.length} row(s) carry ids captured from code ` +
+        `(e.g. "${fromCode[0].id}"), which cannot resolve in Figma.\n` +
+        'If this project\'s tokens live in code, set `"source": "code"` in rename.config.json ' +
+        'and re-plan — the loop then goes apply-code --write instead of emit-figma.',
+    );
+  }
+
   const getter = GETTERS[batch.kind];
   if (!getter) throw new Error(`No Plugin API getter for kind "${batch.kind}".`);
 

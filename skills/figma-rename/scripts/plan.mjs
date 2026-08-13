@@ -26,7 +26,7 @@ import { compileConventions, compileGlob, matchesAny, proposeName } from './lib/
 import { COMPONENT_KINDS } from './lib/convention.mjs';
 import { findNameCollisions, suggestComponentName } from './lib/classify.mjs';
 import { loadInventory } from './lib/inventory.mjs';
-import { MAP_VERSION, conventionHash, loadMapIfPresent, mergePlans, writeMap } from './lib/map.mjs';
+import { MAP_VERSION, conventionHash, ladderFor, loadMapIfPresent, mergePlans, writeMap } from './lib/map.mjs';
 import { toPascal } from './lib/naming.mjs';
 import { isGenericName, suggestForEntries } from './lib/suggest.mjs';
 
@@ -395,6 +395,9 @@ async function main() {
 
   const proposal = {
     version: MAP_VERSION,
+    // Stamped, not inferred: every tool reads the ladder off the map, so a
+    // config edited mid-run cannot silently reinterpret recorded statuses.
+    source: config.source,
     fileKey: config.figma?.fileKey ?? inventory.fileKey ?? null,
     convention: config.convention,
     conventionHash: conventionHash(config.convention),
@@ -405,7 +408,7 @@ async function main() {
 
   // Merge, never overwrite: anything that reached Figma is frozen, and every
   // human decision made through review.mjs is carried forward.
-  const previous = await loadMapIfPresent(config.renameMapPath);
+  const previous = await loadMapIfPresent(config.renameMapPath, { expectSource: config.source });
   const { map, report } = mergePlans(previous, proposal, { fresh: Boolean(args.fresh) });
   if (previous) {
     const parts = [];
@@ -416,12 +419,16 @@ async function main() {
     if (report.skipsKept) parts.push(`${report.skipsKept} skip(s) preserved`);
     if (report.newRows) parts.push(`${report.newRows} new`);
     console.log(`[plan] merged with the existing map — ${parts.join(', ') || 'nothing to carry'}`);
-    const inFlight = map.batches.filter((b) => (b.status ?? 'planned') === 'figma-applied');
-    for (const batch of inFlight) {
-      console.log(
-        `[plan] warning: batch "${batch.id}" is figma-applied — Figma is ahead of the code. ` +
-          'Finish it (apply-code, check --after, mark --applied) before working on anything else.',
-      );
+    // The state that means "half landed": Figma moved but code has not. With no
+    // Figma leg there is no such in-between, so the warning has nothing to say.
+    if (ladderFor(map).includes('figma-applied')) {
+      const inFlight = map.batches.filter((b) => (b.status ?? 'planned') === 'figma-applied');
+      for (const batch of inFlight) {
+        console.log(
+          `[plan] warning: batch "${batch.id}" is figma-applied — Figma is ahead of the code. ` +
+            'Finish it (apply-code, check --after, mark --applied) before working on anything else.',
+        );
+      }
     }
   }
 

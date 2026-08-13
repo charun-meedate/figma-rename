@@ -34,8 +34,10 @@ import {
   conventionHash,
   findChains,
   findDuplicateIds,
-  isFrozen,
+  effectiveRenames,
+  frozenStatuses,
   loadMap,
+  sourceOf,
   selectRenames,
   statusOf,
 } from './lib/map.mjs';
@@ -76,7 +78,7 @@ async function main() {
     wantsValue: ['config','batch','kind'],
   });
   const config = await loadConfig(args.config);
-  const map = await loadMap(config.renameMapPath);
+  const map = await loadMap(config.renameMapPath, { expectSource: config.source });
   const inventory = await loadInventory(config.inventoryPath);
 
   const allTokenNames = inventory.entries.filter((e) => TOKEN_KINDS.has(e.kind)).map((e) => e.name);
@@ -88,11 +90,21 @@ async function main() {
     const applied = selectRenames(map, {
       batch: args.batch,
       kind: args.kind,
-      statuses: ['figma-applied', 'applied'],
+      statuses: frozenStatuses(map),
       decisions: ['accepted'],
     });
     if (!applied.length) {
-      console.log('[check] nothing has been applied yet — nothing to verify.');
+      // Under source:code a written-but-unmarked batch is indistinguishable
+      // from an unwritten one, and this used to exit 0 having verified nothing.
+      const written = map.batches.filter((b) => statusOf(b) === 'planned' && effectiveRenames(b).length);
+      if (sourceOf(map) === 'code' && written.length) {
+        console.log(
+          '[check] nothing is marked applied, so there is nothing to verify. If the rewrite has ' +
+            `already run, record it first: review.mjs mark ${written[0].id} --applied`,
+        );
+      } else {
+        console.log('[check] nothing has been applied yet — nothing to verify.');
+      }
       return;
     }
     return checkAfter(config, applied, allTokenNames, args['no-namespace-classes']);
@@ -161,7 +173,7 @@ async function main() {
   // reported as a stale map.
   const appliedRows = selectRenames(map, {
     kind: args.kind,
-    statuses: ['figma-applied', 'applied'],
+    statuses: frozenStatuses(map),
     decisions: ['accepted'],
   });
   for (const r of appliedRows) {

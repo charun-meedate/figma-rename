@@ -37,6 +37,8 @@ import {
   decisionOf,
   effectiveRenames,
   isFrozen,
+  ladderFor,
+  sourceOf,
   loadMap,
   pendingRenames,
   statusOf,
@@ -148,14 +150,21 @@ function cmdStatus(map) {
     if (openReview.length > 20) console.log(`  … ${openReview.length - 20} more`);
   }
 
-  const blocked = map.batches.filter((b) => !isFrozen(b) && pendingRenames(b).length);
+  const blocked = map.batches.filter((b) => !isFrozen(b, map) && pendingRenames(b).length);
   if (blocked.length) {
     console.log(`\n[review] pending rows block these batches from being applied:`);
     for (const b of blocked) console.log(`  ${b.id} — ${pendingRenames(b).length} undecided (list --batch ${b.id})`);
   }
-  const inFlight = map.batches.filter((b) => statusOf(b) === 'figma-applied');
-  for (const b of inFlight) {
-    console.log(`\n[review] "${b.id}" is figma-applied — Figma is ahead of the code. Next: apply-code --batch ${b.id} --write`);
+  if (sourceOf(map) === 'code') {
+    const due = map.batches.filter((b) => statusOf(b) === 'planned' && !pendingRenames(b).length && effectiveRenames(b).length);
+    for (const b of due) {
+      console.log(`\n[review] "${b.id}" is reviewed and waiting for its code rewrite. Next: apply-code --batch ${b.id} --write`);
+    }
+  } else {
+    const inFlight = map.batches.filter((b) => statusOf(b) === 'figma-applied');
+    for (const b of inFlight) {
+      console.log(`\n[review] "${b.id}" is figma-applied — Figma is ahead of the code. Next: apply-code --batch ${b.id} --write`);
+    }
   }
 }
 
@@ -185,7 +194,7 @@ function cmdList(map, args) {
 function cmdDecide(map, args, decision) {
   if (!args.batch) fail(`${decision} needs --batch <id>.`);
   const batch = batchById(map, args.batch);
-  if (isFrozen(batch)) {
+  if (isFrozen(batch, map)) {
     fail(`Batch "${batch.id}" is ${statusOf(batch)} — it has already gone out. Decisions can only change a planned batch.`);
   }
   const rows = selectRows(batch, args);
@@ -208,7 +217,7 @@ function cmdSetTo(map, args) {
   const figmaId = args._[1];
   if (!figmaId || !args.to) fail('set-to needs a Figma id and --to <name>.');
   for (const batch of map.batches) {
-    if (isFrozen(batch)) continue;
+    if (isFrozen(batch, map)) continue;
     const row = batch.renames.find((r) => r.id === figmaId);
     if (!row) continue;
     const was = row.to;
@@ -237,7 +246,7 @@ function cmdResolve(map, args) {
   // Land it in the batch that owns its kind and scope, or open one — a
   // resolved question is an ordinary accepted rename from here on.
   let batch = map.batches.find(
-    (b) => !isFrozen(b) && b.kind === item.kind && (b.scope ?? null) === (item.scope ?? null),
+    (b) => !isFrozen(b, map) && b.kind === item.kind && (b.scope ?? null) === (item.scope ?? null),
   );
   if (!batch) {
     batch = {
@@ -286,16 +295,29 @@ function cmdMark(map, args) {
   const target = args['figma-applied'] ? 'figma-applied' : args.applied ? 'applied' : null;
   if (!target) fail('mark needs --figma-applied or --applied.');
 
+  const ladder = ladderFor(map);
+  // A code-source map has no Figma leg at all, so this is not "a step you
+  // skipped" — it is a step that does not exist here.
+  if (target === 'figma-applied' && !ladder.includes('figma-applied')) {
+    fail(
+      `This project's tokens live in code ("source": "code") — there is no Figma leg to record. ` +
+        `The ladder here is ${ladder.join(' -> ')}: apply-code --batch ${batch.id} --write, ` +
+        `then mark ${batch.id} --applied.`,
+    );
+  }
+
   const from = statusOf(batch);
-  const order = BATCH_STATUSES.indexOf(from);
-  const to = BATCH_STATUSES.indexOf(target);
+  const order = ladder.indexOf(from);
+  const to = ladder.indexOf(target);
   if (to !== order + 1) {
     fail(
       `"${batch.id}" is ${from}; it cannot go straight to ${target}. ` +
-        `The order is ${BATCH_STATUSES.join(' -> ')}, one step at a time.`,
+        `The order is ${ladder.join(' -> ')}, one step at a time.`,
     );
   }
-  if (target === 'figma-applied') {
+  // These guard the moment the batch stops being editable, whichever step that
+  // is: figma-applied under Figma, applied under code.
+  if (order === 0) {
     const pending = pendingRenames(batch);
     if (pending.length) {
       fail(`"${batch.id}" still has ${pending.length} undecided row(s) — accept or reject them first (list --batch ${batch.id} --pending).`);
@@ -308,6 +330,8 @@ function cmdMark(map, args) {
   console.log(`[review] ${batch.id}: ${from} -> ${target}`);
   if (target === 'figma-applied') {
     console.log('[review] next: re-capture dumps, regenerate tokens, then apply-code --batch ' + batch.id + ' --write');
+  } else if (sourceOf(map) === 'code') {
+    console.log('[review] next: rebuild and test, then check.mjs --after, then commit this batch');
   } else {
     console.log('[review] next: commit this batch (map included, so a revert restores this status too)');
   }
@@ -329,7 +353,7 @@ async function main() {
   }
 
   const config = await loadConfig(args.config);
-  const map = await loadMap(config.renameMapPath);
+  const map = await loadMap(config.renameMapPath, { expectSource: config.source });
 
   let dirty = false;
   switch (command) {

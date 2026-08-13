@@ -65,6 +65,15 @@ const GUARDS = {
   dot: ['(?<![\\w.-])', '(?![\\w.-])'],
 };
 
+/**
+ * The guard names an explicit `code` pair may use. Exported so the map
+ * validator can refuse a typo: a wrong guard used to fall through to `ident`
+ * silently, which rewrites against the wrong boundaries or nothing at all.
+ * Note the deliberate inconsistency in casing is historical — `cssvar` is
+ * lowercase, `tailwindGroup` is not — which is exactly why a typo needs saying.
+ */
+export const GUARD_NAMES = Object.keys(GUARDS);
+
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**

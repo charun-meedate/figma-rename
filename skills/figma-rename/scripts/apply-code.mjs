@@ -34,7 +34,16 @@ import {
 } from './lib/codemod.mjs';
 import { COMMON_FLAGS, loadConfig, parseArgs } from './lib/config.mjs';
 import { loadInventory } from './lib/inventory.mjs';
-import { batchById, isFrozen, loadMap, pendingRenames, selectRenames, statusOf } from './lib/map.mjs';
+import {
+  batchById,
+  effectiveRenames,
+  ladderFor,
+  loadMap,
+  pendingRenames,
+  selectRenames,
+  sourceOf,
+  statusOf,
+} from './lib/map.mjs';
 
 const USAGE = `
 apply-code.mjs — rewrite the codebase for a batch Figma has already applied
@@ -55,22 +64,24 @@ async function main() {
     wantsValue: ['config','batch','kind'],
   });
   const config = await loadConfig(args.config);
-  const map = await loadMap(config.renameMapPath);
+  const map = await loadMap(config.renameMapPath, { expectSource: config.source });
   const inventory = await loadInventory(config.inventoryPath);
   // Default selection is the batches Figma is already ahead on — exactly the
   // set whose code rewrite is DUE. Before v2 a bare `--write` rewrote every
   // batch in the map, putting the codebase N batches ahead of Figma with
   // nothing to catch it.
+  // The state a reviewed batch sits in while its rewrite is DUE. Under Figma
+  // that is figma-applied (Figma moved, code has not); with no Figma leg it is
+  // planned, because there is nothing for the code to be behind.
+  const ladder = ladderFor(map);
+  const codeSource = sourceOf(map) === 'code';
+  const dueStatus = codeSource ? 'planned' : 'figma-applied';
+
   if (args.batch) {
     const batch = batchById(map, args.batch);
     const status = statusOf(batch);
     if (args.write) {
-      // A code-source project never passes through figma-applied: there is no
-      // Figma to apply to. The gate exists to stop code moving ahead of Figma,
-      // and with no Figma there is nothing to be ahead of.
-      if (config.source === 'code' && status === 'planned') {
-        // fall through — planned is the only state a code-source batch has
-      } else if (status !== 'figma-applied') {
+      if (status !== dueStatus) {
         throw new Error(
           status === 'planned'
             ? `"${batch.id}" has not been renamed in Figma yet. Order matters:\n` +
@@ -87,10 +98,24 @@ async function main() {
     }
   }
 
-  // Same reasoning for a bare run: with no Figma leg, `planned` is the state a
-  // reviewed batch sits in and is what is due.
-  const dueStatus = config.source === 'code' ? 'planned' : 'figma-applied';
   const statuses = args.batch ? undefined : [dueStatus];
+  // With no Figma leg there is no emit gate guaranteeing one due batch at a
+  // time, so a bare `--write` could rewrite every reviewed batch at once — the
+  // "apply everything and lose the rollback" failure the batch loop exists to
+  // prevent. Naming the candidates and demanding --batch is the same answer
+  // review.mjs gives with its mandatory --all.
+  if (codeSource && args.write && !args.batch) {
+    const due = map.batches.filter(
+      (b) => statusOf(b) === dueStatus && !pendingRenames(b).length && effectiveRenames(b).length,
+    );
+    if (due.length > 1) {
+      throw new Error(
+        `${due.length} batches are reviewed and waiting: ${due.map((b) => b.id).join(', ')}.\n` +
+          'Name one with --batch. One batch is one commit is one thing you can revert.',
+      );
+    }
+  }
+
   const renames = selectRenames(map, {
     batch: args.batch,
     kind: args.kind,
@@ -101,13 +126,30 @@ async function main() {
     const inFlight = map.batches.filter((b) => statusOf(b) === dueStatus);
     throw new Error(
       inFlight.length
-        ? 'Nothing accepted to apply in the batches Figma is ahead on.'
-        : config.source === 'code'
+        ? codeSource
+          ? 'Nothing accepted to apply in the batches that are reviewed and waiting.'
+          : 'Nothing accepted to apply in the batches Figma is ahead on.'
+        : codeSource
           ? 'No batch is waiting for its code rewrite. Plan and review one first ' +
             '(plan.mjs → review.mjs accept).'
           : 'No batch is waiting for its code rewrite. Apply one in Figma first ' +
             '(emit-figma → use_figma → review.mjs mark <id> --figma-applied).',
     );
+  }
+
+  // Commit state is git state, which these scripts deliberately cannot read —
+  // so this is an advisory, not a gate. Two applied-but-uncommitted batches
+  // cannot be reverted separately, which is the whole promise of one-per-commit.
+  if (codeSource && args.write) {
+    const alreadyApplied = map.batches.filter((b) => statusOf(b) === 'applied');
+    if (alreadyApplied.length) {
+      console.log(
+        `[apply-code] note: ${alreadyApplied.map((b) => b.id).join(', ')} ` +
+          `${alreadyApplied.length === 1 ? 'is' : 'are'} already applied — commit ` +
+          `${alreadyApplied.length === 1 ? 'it' : 'them'} first if you have not, ` +
+          'or two batches end up in one revert.',
+      );
+    }
   }
 
   const allTokenNames = inventory.entries.filter((e) => TOKEN_KINDS.has(e.kind)).map((e) => e.name);
@@ -214,6 +256,15 @@ async function main() {
 
   if (!write) {
     console.log('\n[apply-code] dry run. Re-run with --write to apply.');
+    return;
+  }
+  // Order matters under source:code — the mark is what makes `check --after`
+  // able to see this batch at all, so it comes first, not last.
+  if (codeSource) {
+    console.log('\n[apply-code] applied. Record it, then verify:');
+    if (args.batch) console.log(`[apply-code]   node review.mjs mark ${args.batch} --applied`);
+    console.log('[apply-code]   rebuild and run the test suite');
+    console.log('[apply-code]   node check.mjs --after          then commit');
     return;
   }
   console.log('\n[apply-code] applied. Next: rebuild, run the test suite, then:');

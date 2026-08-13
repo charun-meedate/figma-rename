@@ -31,6 +31,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { GUARD_NAMES } from './codemod.mjs';
 import { VALID_KINDS } from './config.mjs';
 
 export const MAP_VERSION = 2;
@@ -47,14 +48,39 @@ export const MAP_VERSION = 2;
  * `check --after` scan the right thing.
  */
 export const BATCH_STATUSES = ['planned', 'figma-applied', 'applied'];
-export const FROZEN_STATUSES = ['figma-applied', 'applied'];
+
+/**
+ * The ladder is per source, not global.
+ *
+ * A project whose tokens are hand-written has no Figma leg, so `figma-applied`
+ * is not merely skipped there — it is meaningless, and a map carrying it is a
+ * map that disagrees with itself. Treating the ladder as one global list is
+ * what left `mark --applied` unreachable and `check --after` verifying nothing
+ * while exiting green.
+ */
+const LADDERS = {
+  figma: ['planned', 'figma-applied', 'applied'],
+  code: ['planned', 'applied'],
+};
+
+/** Which side of the file the names come from. Old maps predate the key. */
+export const sourceOf = (map) => map?.source ?? 'figma';
+
+export const ladderFor = (map) => LADDERS[sourceOf(map)] ?? LADDERS.figma;
+
+/**
+ * Frozen is the ladder minus `planned`, whichever ladder applies: a batch whose
+ * names have gone out somewhere. Decisions stop being editable and a re-plan
+ * carries it verbatim, because the thing it describes already happened.
+ */
+export const frozenStatuses = (map) => ladderFor(map).slice(1);
 
 /** A row nobody has ruled on yet cannot be applied. */
 export const DECISIONS = ['pending', 'accepted', 'rejected'];
 
 export const REVIEW_DECISIONS = ['pending', 'rejected'];
 
-export async function loadMap(mapPath) {
+export async function loadMap(mapPath, { expectSource = null } = {}) {
   let parsed;
   try {
     parsed = JSON.parse(await fs.readFile(mapPath, 'utf8'));
@@ -64,13 +90,24 @@ export async function loadMap(mapPath) {
     }
     throw new Error(`Could not read ${mapPath}: ${err.message}`);
   }
-  return validateShape(parsed, mapPath);
+  const map = validateShape(parsed, mapPath);
+  // Same reasoning as the conventionHash gate: a fact fixed at planning time,
+  // refused when the config has since moved. Editing `source` mid-map would
+  // silently reinterpret statuses that are already recorded.
+  if (expectSource && sourceOf(map) !== expectSource) {
+    throw new Error(
+      `${mapPath} was planned with source "${sourceOf(map)}" but rename.config.json now says ` +
+        `"${expectSource}". Finish or delete this map before switching sides — the batch ` +
+        'statuses in it mean different things under each.',
+    );
+  }
+  return map;
 }
 
 /** Same as loadMap, but a missing file is not an error — used by plan.mjs. */
-export async function loadMapIfPresent(mapPath) {
+export async function loadMapIfPresent(mapPath, options) {
   try {
-    return await loadMap(mapPath);
+    return await loadMap(mapPath, options);
   } catch (err) {
     if (err.message.startsWith('No rename map at')) return null;
     throw err;
@@ -91,6 +128,10 @@ export function validateShape(parsed, label = 'rename map') {
   if (!Array.isArray(parsed.batches)) {
     throw new Error(`Invalid ${label}: \`batches\` must be an array.`);
   }
+  if (parsed.source !== undefined && !LADDERS[parsed.source]) {
+    errors.push(`source "${parsed.source}" is not one of: ${Object.keys(LADDERS).join(', ')}.`);
+  }
+  const ladder = ladderFor(parsed);
 
   const seenBatchIds = new Set();
   parsed.batches.forEach((batch, bi) => {
@@ -100,8 +141,13 @@ export function validateShape(parsed, label = 'rename map') {
     if (!VALID_KINDS.has(batch.kind)) {
       errors.push(`batches[${bi}].kind "${batch.kind}" is not one of: ${[...VALID_KINDS].join(', ')}.`);
     }
-    if (batch.status !== undefined && !BATCH_STATUSES.includes(batch.status)) {
-      errors.push(`batches[${bi}].status "${batch.status}" is not one of: ${BATCH_STATUSES.join(', ')}.`);
+    if (batch.status !== undefined && !ladder.includes(batch.status)) {
+      // Naming the source is what makes this readable: "figma-applied is not a
+      // status" is baffling until you know the map says the tokens live in code.
+      errors.push(
+        `batches[${bi}].status "${batch.status}" is not one of: ${ladder.join(', ')} ` +
+          `(this map's source is "${sourceOf(parsed)}").`,
+      );
     }
     if (!Array.isArray(batch.renames)) {
       errors.push(`batches[${bi}].renames must be an array.`);
@@ -123,6 +169,14 @@ export function validateShape(parsed, label = 'rename map') {
         } else {
           r.code.forEach((pair, pi) => {
             if (!pair || !pair.from || !pair.to) errors.push(`${at}.code[${pi}] needs both \`from\` and \`to\`.`);
+            // A MISSING guard is the documented default. A present-but-unknown
+            // one is a typo, and it used to degrade to `ident` without a word.
+            if (pair?.guard !== undefined && !GUARD_NAMES.includes(pair.guard)) {
+              errors.push(
+                `${at}.code[${pi}].guard "${pair.guard}" is not one of: ${GUARD_NAMES.join(', ')}. ` +
+                  'Omit it to get the default (ident).',
+              );
+            }
           });
         }
       }
@@ -153,7 +207,7 @@ export async function writeMap(mapPath, map) {
 
 export const statusOf = (batch) => batch.status ?? 'planned';
 export const decisionOf = (rename) => rename.decision ?? 'pending';
-export const isFrozen = (batch) => FROZEN_STATUSES.includes(statusOf(batch));
+export const isFrozen = (batch, map) => frozenStatuses(map).includes(statusOf(batch));
 
 export function batchesByStatus(map, ...statuses) {
   return map.batches.filter((b) => statuses.includes(statusOf(b)));
@@ -243,7 +297,7 @@ export function findDuplicateIds(map) {
   const seen = new Map();
   const clashes = [];
   for (const batch of map.batches) {
-    if (isFrozen(batch)) continue;
+    if (isFrozen(batch, map)) continue;
     for (const rename of effectiveRenames(batch)) {
       if (seen.has(rename.id)) {
         clashes.push({ id: rename.id, batches: [seen.get(rename.id), batch.id], name: rename.from });
@@ -305,13 +359,13 @@ export function mergePlans(oldMap, freshMap, { fresh = false } = {}) {
     return { map: freshMap, report };
   }
 
-  const frozenBatches = oldMap.batches.filter(isFrozen);
+  const frozenBatches = oldMap.batches.filter((b) => isFrozen(b, oldMap));
   report.frozen = frozenBatches.length;
 
   // Decisions from batches that had not shipped yet, keyed by Figma id.
   const priorDecisions = new Map();
   for (const batch of oldMap.batches) {
-    if (isFrozen(batch)) continue;
+    if (isFrozen(batch, oldMap)) continue;
     for (const rename of batch.renames) {
       if (decisionOf(rename) !== 'pending') priorDecisions.set(rename.id, rename);
     }

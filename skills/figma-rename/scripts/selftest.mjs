@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { definedProperties, toTokenName } from './capture-css.mjs';
 import { dartTokenClasses, memberToTokenName } from './capture-dart.mjs';
+import { frozenStatuses, ladderFor, sourceOf, validateShape } from './lib/map.mjs';
 import { toCamel as toCamelForTest } from './lib/naming.mjs';
 import { buildReplacer, namespaceClassPairs, rewrite, spellingsFor } from './lib/codemod.mjs';
 import { classifyComponent, findNameCollisions, suggestComponentName } from './lib/classify.mjs';
@@ -2084,6 +2085,253 @@ test('a config claiming both sources is called out, not quietly obeyed', () => {
   assert.equal(result.ok, true, 'a warning, not a refusal — the config may be deliberate');
   assert.match(result.out, /STILL-HERE/);
   assert.match(result.out, /documentation or the source of truth/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+/** A code-source project ready to plan: CSS token, a consumer, git, config. */
+function codeSourceProject(overrides = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-code-'));
+  fs.mkdirSync(path.join(dir, 'app'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      source: 'code',
+      kinds: ['variable'],
+      convention: {
+        segmentCase: 'kebab',
+        structure: { minSegments: 1 },
+        rules: [{ match: 'foreground/**', to: 'surface/$1' }],
+      },
+      code: {
+        roots: ['.'], include: ['app/**'], exclude: [], generated: [],
+        spellings: ['cssVar', 'tailwind'], cssPrefix: '',
+      },
+      ...overrides,
+    }),
+  );
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({ entries: [{ kind: 'variable', id: 'css:--foreground-base-action', name: 'foreground/base/action', scope: 'theme.css' }] }),
+  );
+  fs.writeFileSync(path.join(dir, 'app/theme.css'), ':root{--foreground-base-action:#123}\n');
+  fs.writeFileSync(path.join(dir, 'app/x.tsx'), '<div className="bg-foreground-base-action" />\n');
+  return dir;
+}
+
+/** Plans and accepts everything, returning the batch id. */
+function reviewedBatch(dir) {
+  run('plan.mjs', [], dir);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  const id = map.batches[0].id;
+  run('review.mjs', ['accept', '--batch', id, '--all'], dir);
+  return id;
+}
+
+test('plan stamps the source into the map, and an old map still reads as figma', () => {
+  const dir = codeSourceProject();
+  run('plan.mjs', [], dir);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  assert.equal(map.source, 'code', 'the ladder has to be readable from the map alone');
+  // A map written before the key existed is a figma map, which is what every
+  // one of them was.
+  assert.equal(sourceOf({ batches: [] }), 'figma');
+  assert.deepEqual(ladderFor({ batches: [] }), ['planned', 'figma-applied', 'applied']);
+  assert.deepEqual(ladderFor({ source: 'code' }), ['planned', 'applied']);
+  assert.deepEqual(frozenStatuses({ source: 'code' }), ['applied']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a map planned under one source refuses to load under the other', () => {
+  const dir = codeSourceProject();
+  run('plan.mjs', [], dir);
+  // Someone flips the config after part of the work is recorded.
+  const config = JSON.parse(fs.readFileSync(path.join(dir, 'rename.config.json'), 'utf8'));
+  config.source = 'figma';
+  config.figma = { fileKey: 'K' };
+  fs.writeFileSync(path.join(dir, 'rename.config.json'), JSON.stringify(config));
+  const result = run('review.mjs', ['status'], dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /planned with source "code"/);
+  assert.match(result.out, /mean different things/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a code map holding figma-applied is refused at load', () => {
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  const mapPath = path.join(dir, 'rename/rename-map.json');
+  const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+  map.batches.find((b) => b.id === id).status = 'figma-applied';
+  fs.writeFileSync(mapPath, JSON.stringify(map));
+  const result = run('check.mjs', [], dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /"figma-applied" is not one of: planned, applied/);
+  assert.match(result.out, /source is "code"/, 'the reason is unreadable without naming the source');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('mark --figma-applied on a code map names the two-step ladder', () => {
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  const result = run('review.mjs', ['mark', id, '--figma-applied'], dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /no Figma leg to record/);
+  assert.match(result.out, /planned -> applied/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('mark --applied on a code map leaves planned directly, and refuses undecided rows', () => {
+  const dir = codeSourceProject();
+  run('plan.mjs', [], dir);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  const id = map.batches[0].id;
+  // Undecided rows must still block the step that freezes the batch.
+  const blocked = run('review.mjs', ['mark', id, '--applied'], dir);
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.out, /undecided row/);
+
+  run('review.mjs', ['accept', '--batch', id, '--all'], dir);
+  const marked = run('review.mjs', ['mark', id, '--applied'], dir);
+  assert.equal(marked.ok, true, marked.out);
+  assert.match(marked.out, /planned -> applied/);
+  assert.match(marked.out, /check\.mjs --after/, 'the next step is verification, not commit');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('code-source: check --after says so while the written batch is still unmarked', () => {
+  // The original sin: this filtered on figma-applied, matched nothing, and
+  // exited 0 — the post-apply safety net verifying zero files and reporting green.
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  run('apply-code.mjs', ['--batch', id, '--write'], dir);
+  const result = run('check.mjs', ['--after'], dir);
+  assert.match(result.out, /nothing is marked applied/);
+  assert.match(result.out, new RegExp(`mark ${id} --applied`));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('code-source: check --after sees an applied batch and catches a stale spelling', () => {
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  run('apply-code.mjs', ['--batch', id, '--write'], dir);
+  run('review.mjs', ['mark', id, '--applied'], dir);
+
+  const clean = run('check.mjs', ['--after'], dir);
+  assert.equal(clean.ok, true, clean.out);
+  assert.match(clean.out, /scanned for/, 'it must actually scan, not skip');
+
+  fs.writeFileSync(path.join(dir, 'app/stale.tsx'), '<div className="text-foreground-base-action" />\n');
+  const dirty = run('check.mjs', ['--after'], dir);
+  assert.equal(dirty.ok, false, 'a leftover old spelling has to fail the run');
+  assert.match(dirty.out, /stale name still in code/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('code-source: forward check passes on a re-captured inventory once the batch is marked', () => {
+  // Forward check used to treat an applied-but-planned batch as not yet done
+  // and hard-error "Someone renamed it in between" — blaming Figma on a project
+  // that has none.
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  run('apply-code.mjs', ['--batch', id, '--write'], dir);
+  run('review.mjs', ['mark', id, '--applied'], dir);
+  run('capture-css.mjs', ['app/theme.css'], dir);
+  const result = run('check.mjs', [], dir);
+  assert.equal(result.ok, true, result.out);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('code-source: bare apply-code --write refuses two reviewed batches and names them', () => {
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  const mapPath = path.join(dir, 'rename/rename-map.json');
+  const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+  map.batches.push({
+    id: 'variable-second', kind: 'variable', scope: 'theme.css', status: 'planned',
+    renames: [{ id: 'css:--other', from: 'other/token', to: 'moved/token', source: 'rule', decision: 'accepted' }],
+  });
+  fs.writeFileSync(mapPath, JSON.stringify(map));
+
+  const refused = run('apply-code.mjs', ['--write'], dir);
+  assert.equal(refused.ok, false);
+  assert.match(refused.out, /2 batches are reviewed and waiting/);
+  assert.match(refused.out, new RegExp(id));
+  assert.match(refused.out, /one thing you can revert/);
+
+  // Exactly one due batch still proceeds without naming it.
+  map.batches.pop();
+  fs.writeFileSync(mapPath, JSON.stringify(map));
+  const allowed = run('apply-code.mjs', ['--write'], dir);
+  assert.equal(allowed.ok, true, allowed.out);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('code-source: apply-code warns when an earlier applied batch may be uncommitted', () => {
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  run('apply-code.mjs', ['--batch', id, '--write'], dir);
+  run('review.mjs', ['mark', id, '--applied'], dir);
+  const mapPath = path.join(dir, 'rename/rename-map.json');
+  const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+  map.batches.push({
+    id: 'variable-second', kind: 'variable', scope: 'theme.css', status: 'planned',
+    renames: [{ id: 'css:--other', from: 'other/token', to: 'moved/token', source: 'rule', decision: 'accepted' }],
+  });
+  fs.writeFileSync(mapPath, JSON.stringify(map));
+  const result = run('apply-code.mjs', ['--batch', 'variable-second', '--write'], dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, new RegExp(`${id}.*already applied`));
+  assert.match(result.out, /one revert/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('re-plan freezes an applied code batch and keeps its decisions verbatim', () => {
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  run('apply-code.mjs', ['--batch', id, '--write'], dir);
+  run('review.mjs', ['mark', id, '--applied'], dir);
+  run('capture-css.mjs', ['app/theme.css'], dir);
+  const result = run('plan.mjs', [], dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /1 applied batch\(es\) frozen/);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  const kept = map.batches.find((b) => b.id === id);
+  assert.equal(kept.status, 'applied');
+  assert.equal(kept.renames[0].decision, 'accepted', 'a frozen batch carries its decisions');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('an unknown code guard is refused at write, naming the eight real ones', () => {
+  // A present-but-wrong guard used to fall through to `ident` in silence, which
+  // rewrites against the wrong boundaries or matches nothing at all.
+  assert.throws(
+    () =>
+      validateShape({
+        version: 2,
+        batches: [{
+          id: 'b', kind: 'variable',
+          renames: [{ id: '1', from: 'a', to: 'b', code: [{ from: 'x', to: 'y', guard: 'tailwindgroup' }] }],
+        }],
+      }),
+    /guard "tailwindgroup" is not one of: ident, cssvar, kebab, path, tailwind, tailwindGroup, member, dot/,
+  );
+  // Omitting it is the documented default, not a typo.
+  assert.doesNotThrow(() =>
+    validateShape({
+      version: 2,
+      batches: [{ id: 'b', kind: 'variable', renames: [{ id: '1', from: 'a', to: 'b', code: [{ from: 'x', to: 'y' }] }] }],
+    }),
+  );
+});
+
+test('emit-figma refuses ids captured from code, and names the source setting', () => {
+  const dir = codeSourceProject({ source: 'figma', figma: { fileKey: 'K' } });
+  const id = reviewedBatch(dir);
+  const result = run('emit-figma.mjs', ['--batch', id], dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /ids captured from code/);
+  assert.match(result.out, /"source": "code"/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
