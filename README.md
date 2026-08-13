@@ -1,7 +1,11 @@
 # figma-rename
 
-Claude Code Skill สำหรับ **เปลี่ยนชื่อ token / component ใน Figma พร้อม sync ชื่อในโค้ดให้ตรงกัน**
+Claude Code Skill สำหรับ **เปลี่ยนชื่อ token / component ให้ตรงมาตรฐาน แล้วให้โค้ดตรงตามไปด้วย**
 ในการเปลี่ยนแปลงก้อนเดียวที่รีวิวได้และย้อนได้
+
+ใช้ได้ทั้งกับโปรเจกต์ที่ชื่ออยู่ใน **Figma** และโปรเจกต์ที่ชื่อ**เขียนมือไว้ในโค้ด** —
+CSS custom property, utility class ของ Tailwind, คลาส token ของ Dart — โดยไม่ต้องมีไฟล์
+Figma เลย มาตรฐานเดียวกัน ด่านรีวิวเดียวกัน ต่างกันแค่มีขา Figma หรือไม่มี
 
 ## สารบัญ
 
@@ -116,8 +120,10 @@ skills/figma-rename/         ตัว skill
 ├── figma-rename.md          คู่มือฉบับเต็ม
 ├── references/              รายละเอียดแยกหัวข้อ โหลดเมื่อจำเป็น
 ├── presets/                 มาตรฐานกลาง — ใช้ร่วมกันหลายโปรเจกต์
-├── evals/                   ชุดทดสอบพฤติกรรม 5 อัน
+├── evals/                   ชุดทดสอบพฤติกรรม 6 อัน
 └── scripts/                 โค้ดจริง ไม่มี dependency (Node 18+)
+    ├── capture-css.mjs      inventory จาก CSS (โปรเจกต์ที่ไม่มี Figma)
+    └── capture-dart.mjs     inventory จากคลาส Dart / ThemeExtension
 ```
 
 ## เช็คว่าเครื่องพร้อม
@@ -127,7 +133,7 @@ node skills/figma-rename/scripts/selftest.mjs
 ```
 
 รันสคริปต์จริงบนโปรเจกต์ชั่วคราวในโฟลเดอร์ temp ไม่แตะโปรเจกต์ไหน
-ต้องขึ้น `177 passed, 0 failed`
+ต้องขึ้น `194 passed, 0 failed`
 
 สถานะการทดสอบทั้งหมดบันทึกไว้ที่เดียว ใน
 [docs/REFERENCE.md → สถานะการทดสอบ](docs/REFERENCE.md#สถานะการทดสอบ)

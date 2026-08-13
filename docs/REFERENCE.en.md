@@ -2,7 +2,7 @@
 
 > [ภาษาไทย](REFERENCE.md) · English
 
-## สารบัญ
+## Contents
 
 - [What it can rename](#what-it-can-rename)
 - [The flow](#the-flow)
@@ -78,6 +78,26 @@ the code, so `git revert` restores it for free.
 
 Rollback: `node "$S/emit-figma.mjs" --batch <id> --reverse`, then `git revert`
 that commit.
+
+## Two shapes of project
+
+`source` says which side the names come from, and it changes exactly one thing:
+whether the run has a Figma leg. The standard, the review gate and the codemod
+are identical either way — which is the whole point, one standard across both.
+
+| `"source"` | how you know | the loop |
+|---|---|---|
+| `"figma"` (default) | `figma.fileKey` is required | plan → review → check → **emit-figma → use_figma → mark --figma-applied** → apply-code → check --after → mark --applied |
+| `"code"` | tokens are hand-written, nothing upstream | plan → review → check → apply-code --write → **mark --applied** → check --after |
+
+The batch ladder is shorter under `code` — `planned → applied`, with
+`figma-applied` not skipped but **invalid**; a map carrying it is refused. The
+`source` is stamped into the map itself, the way `conventionHash` is, because a
+status already recorded has to be readable from the map alone rather than from a
+config that can be edited afterwards.
+
+A `code` project's inventory comes from `capture-css.mjs` or `capture-dart.mjs`,
+and rollback is `git revert` on its own.
 
 ## One standard across projects (`extends`)
 
@@ -210,7 +230,7 @@ Full detail — tables, thresholds, known limits — is in
 
 ## Test status
 
-`node skills/figma-rename/scripts/selftest.mjs` — 177 cases, all passing.
+`node skills/figma-rename/scripts/selftest.mjs` — 194 cases, all passing.
 Covers convention rules and templates, boundary guards (`--text-primary` must
 not match inside `--text-primary-default`; `.primaryDefault` only after a dot),
 chains and swaps replaced simultaneously, all four `check` refusals (stale map /
@@ -240,6 +260,7 @@ skills/figma-rename/
 ├── SKILL.md                     what Claude Code loads
 ├── figma-rename.md              the full manual — the substance lives here
 ├── references/
+│   ├── asking.md                wording the six questions Step 0 asks
 │   ├── naming-convention.md     the segment model + writing it as rules
 │   ├── suggest-engine.md        naming from values + what it refuses to guess
 │   ├── inventory.md             use_figma read scripts, per kind
@@ -248,16 +269,22 @@ skills/figma-rename/
 │   ├── code-sync.md             the spellings in code + generated vs hand-written
 │   └── rename-map.md            the rename-map.json contract
 ├── presets/                     the shared naming standard
-├── evals/                       4 behavioural tests
+├── evals/                       6 behavioural tests
 └── scripts/
+    ├── capture-css.mjs          inventory from CSS custom properties (source: code)
+    ├── capture-dart.mjs         inventory from a Dart token class / ThemeExtension
     ├── plan.mjs                 inventory + convention + suggest → rename-map.json (a proposal)
+    ├── review.mjs               accept/reject/resolve + the only writer of batch status
     ├── check.mjs                refuses a map that would break (+ --code, --after)
     ├── emit-figma.mjs           batch → a script for use_figma (+ --reverse)
     ├── apply-code.mjs           codemod across the repo (dry-run by default)
-    ├── selftest.mjs             177 cases
+    ├── selftest.mjs             194 cases
     ├── rename.config.example.json
     └── lib/
         ├── suggest.mjs          value → name (colour / number) + calibration
+        ├── classify.mjs         component structure → a kind
+        ├── handoff.mjs          cross-check against tokens.config.json
+        ├── detect.mjs           which shape of project this is
         ├── convention.mjs       rules + normalisers
         ├── codemod.mjs          code spellings + simultaneous replacement
         └── …

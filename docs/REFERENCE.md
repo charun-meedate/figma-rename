@@ -74,6 +74,25 @@ node "$S/review.mjs" mark variable-2-semantic --applied
 
 ย้อนกลับ: `node "$S/emit-figma.mjs" --batch <id> --reverse` แล้ว `git revert` commit นั้น
 
+## สองรูปแบบของโปรเจกต์
+
+`source` บอกว่าชื่อมาจากฝั่งไหน และมันเปลี่ยนแค่เรื่องเดียว — มีขา Figma หรือไม่มี
+มาตรฐาน ด่านรีวิว และ codemod เหมือนกันทั้งสองแบบ ซึ่งเป็นประเด็นทั้งหมด:
+มาตรฐานเดียวใช้ได้กับทั้งสองแบบ
+
+| `"source"` | รู้ได้จาก | วงจร |
+|---|---|---|
+| `"figma"` (ค่าเริ่มต้น) | ต้องมี `figma.fileKey` | plan → review → check → **emit-figma → use_figma → mark --figma-applied** → apply-code → check --after → mark --applied |
+| `"code"` | token เขียนมือ ไม่มีอะไรอยู่ข้างหลัง | plan → review → check → apply-code --write → **mark --applied** → check --after |
+
+ladder ของ batch สั้นกว่าในแบบ `code` — `planned → applied` โดย `figma-applied`
+ไม่ใช่ "ขั้นที่ข้าม" แต่**ใช้ไม่ได้เลย** และ map ที่มีสถานะนั้นจะถูกปฏิเสธ ตัว `source`
+ถูกประทับไว้ใน map เอง (แบบเดียวกับ `conventionHash`) เพราะสถานะที่บันทึกแล้วต้องอ่านได้
+จาก map ตัวเดียว ไม่ใช่ต้องพึ่ง config ที่แก้ทีหลังได้
+
+inventory ของแบบ `code` มาจาก `capture-css.mjs` หรือ `capture-dart.mjs` และการย้อนกลับ
+คือ `git revert` เฉย ๆ
+
 ## มาตรฐานกลางข้ามโปรเจกต์ (`extends`)
 
 `rename.config.json` ของแต่ละโปรเจกต์ควรมีแค่ข้อเท็จจริงของโปรเจกต์นั้น ส่วนกฎการตั้งชื่อ
@@ -184,7 +203,7 @@ Variable 3   -> opacity/50       [low]    0.5 อยู่ในช่วง 0�
 
 ## สถานะการทดสอบ
 
-`node skills/figma-rename/scripts/selftest.mjs` — 177 เคส ผ่านหมด ครอบคลุม
+`node skills/figma-rename/scripts/selftest.mjs` — 194 เคส ผ่านหมด ครอบคลุม
 convention/rule template, boundary guard (`--text-primary` ต้องไม่ไปโดน
 `--text-primary-default`, `.primaryDefault` ต้องโดนเฉพาะหลังจุด), chain กับ swap
 ที่ต้องแทนที่พร้อมกัน, การ refuse ทั้ง 4 แบบของ check (map เก่า / ชื่อซ้ำ / identifier ชน /
@@ -210,6 +229,7 @@ skills/figma-rename/
 ├── SKILL.md                     ไฟล์ที่ Claude Code โหลด
 ├── figma-rename.md              คู่มือฉบับเต็ม — เนื้อหาหลักอยู่ที่นี่
 ├── references/
+│   ├── asking.md                ถ้อยคำของคำถามทั้ง 6 รอบใน Step 0
 │   ├── naming-convention.md     segment model + วิธีเขียนเป็น rule
 │   ├── suggest-engine.md        ตั้งชื่อจากค่า + สิ่งที่มันปฏิเสธจะเดา
 │   ├── inventory.md             สคริปต์ use_figma อ่านของที่มีอยู่ (แยกตาม kind)
@@ -218,7 +238,7 @@ skills/figma-rename/
 │   ├── code-sync.md             การสะกดแต่ละแบบในโค้ด + generated vs hand-written
 │   └── rename-map.md            สัญญาของ rename-map.json
 ├── presets/                     มาตรฐานกลาง (aurora, starter)
-├── evals/                       ชุดทดสอบพฤติกรรม 4 อัน
+├── evals/                       ชุดทดสอบพฤติกรรม 6 อัน
 └── scripts/
     ├── plan.mjs                 inventory + convention + suggest → rename-map.json (ข้อเสนอ)
     ├── capture-css.mjs           inventory from CSS (source: code)
@@ -227,10 +247,11 @@ skills/figma-rename/
     ├── check.mjs                ปฏิเสธ map ที่จะพัง (+ --code, --after)
     ├── emit-figma.mjs           batch → สคริปต์สำหรับ use_figma (+ --reverse)
     ├── apply-code.mjs           codemod ทั้ง repo (dry-run เป็น default)
-    ├── selftest.mjs             177 เคส
+    ├── selftest.mjs             194 เคส
     ├── rename.config.example.json
     └── lib/
         ├── suggest.mjs          value → ชื่อ (สี/ตัวเลข) + calibration
+        ├── detect.mjs           โปรเจกต์นี้เป็นรูปแบบไหน
         ├── classify.mjs         โครงสร้าง component → ชนิด (Button/Modal/…)
         ├── handoff.mjs          cross-check กับ tokens.config.json
         ├── convention.mjs       rule + normalizer

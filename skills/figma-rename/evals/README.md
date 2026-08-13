@@ -28,7 +28,7 @@
 
 ## ต่างจาก `selftest.mjs` ยังไง
 
-`selftest.mjs` ทดสอบว่า **สคริปต์** ทำงานถูก — 177 เคสบน boundary guard, การแทนที่
+`selftest.mjs` ทดสอบว่า **สคริปต์** ทำงานถูก — 194 เคสบน boundary guard, การแทนที่
 พร้อมกันตอนมี chain, การ refuse ของ check, calibration, staging กับ reverse
 รันได้ในเครื่องเปล่า ไม่ต้องมี Figma
 

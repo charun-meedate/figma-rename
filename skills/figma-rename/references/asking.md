@@ -31,6 +31,15 @@ run has a Figma leg at all.
 | the tokens are hand-written here, nothing behind them | `"code"` | same standard, same review, no `emit-figma` step |
 | there is a Figma file *and* hand-written tokens that drift apart | ask which one wins | see below |
 
+When the answer is `"code"`, say what happens next in the same breath, because
+the two steps that follow are not the Figma ones: the inventory comes from
+`capture-css.mjs` or `capture-dart.mjs` rather than `use_figma`, and
+`code.spellings` has to match the stack — `tailwind` for utility classes,
+`camel` for a Dart class. `plan.mjs` names the shape it sees and what it needs;
+`references/code-sync.md` has the lookup table. Getting spellings wrong is the
+quiet failure here: the definitions move, every call site stays, and the run
+reports success.
+
 The third answer is the common one in a team that has been shipping for a while,
 and it is not a config question — it is a decision about which artefact is the
 source of truth. Say it plainly: **renaming both by hand keeps two standards

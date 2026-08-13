@@ -1,6 +1,6 @@
 ---
 name: figma-rename
-description: Rename design tokens and components to a shared naming standard across Figma AND the codebase in one reviewable change, batch by batch, then hand the names to figma-token-export. Presets (`extends`) let many projects share one standard. Suggests names from what a thing IS — a colour's value, a component's structure — with a stated reason and confidence. Use when asked to rename tokens or components, apply or share a naming convention or SSOT across projects, make a Figma file match the team standard, name unnamed variables or components, or when a rename in Figma has left code referring to names that no longer exist.
+description: Rename design tokens and components to a shared naming standard and keep code in step, batch by batch, reviewable and reversible. Works whether the names live in Figma (variables, components, styles) or only in code — CSS custom properties, Tailwind utility classes, a Dart or TypeScript token class — with no Figma file required. Presets (`extends`) let many projects share one standard. Suggests names from what a thing IS: a colour's value, a component's structure. Use when asked to rename tokens, variables, CSS custom properties or components, to apply or share a naming convention or SSOT across projects, to make a file match the team standard, to name unnamed variables or components, or when a rename has left code referring to names that no longer exist.
 ---
 
 # Figma rename → code, in one change
@@ -100,7 +100,7 @@ Deeper detail lives in `./references/`, loaded on demand:
 | file | when |
 |---|---|
 | [`presets/`](presets/) | the shared standards (`aurora`, `starter`) a project `extends` |
-| [`references/asking.md`](references/asking.md) | wording the five questions Step 0 asks, in the user's own names |
+| [`references/asking.md`](references/asking.md) | wording the six questions Step 0 asks, in the user's own names |
 | [`references/naming-convention.md`](references/naming-convention.md) | deciding the target convention, writing it as rules, and sharing it |
 | [`references/suggest-engine.md`](references/suggest-engine.md) | naming a variable from its value, and what it refuses to guess |
 | [`references/inventory.md`](references/inventory.md) | reading what exists out of Figma (`use_figma` read scripts) |

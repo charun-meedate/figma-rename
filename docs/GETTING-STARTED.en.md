@@ -3,7 +3,7 @@
 > [ภาษาไทย](GETTING-STARTED.md) · English
 > Maintaining the skill / how it works inside → [MAINTAINING.en.md](MAINTAINING.en.md) · [REFERENCE.en.md](REFERENCE.en.md)
 
-## สารบัญ
+## Contents
 
 - [One thing to understand before starting](#one-thing-to-understand-before-starting)
 - [One-time setup](#one-time-setup)
@@ -40,7 +40,9 @@ that makes a mistake reversible.
 
 ## One-time setup
 
-1. Have a Figma file link you can **edit** (not just view)
+1. **If the tokens live in Figma** — a file link you can **edit**, not just view.
+   If they are hand-written in the repo, skip this and see "If there is no Figma
+   behind the project" below.
 2. Install the skill into your project:
 
 ```bash
@@ -127,6 +129,28 @@ many code files it reaches, how to undo it.
 > in the preset.
 
 ---
+
+### If there is no Figma behind the project
+
+Answer Round 0 with "hand-written in the repo" and the loop gets shorter — no
+Figma leg at all. Same standard, same review gate:
+
+```
+1. read the tokens out of the code   capture-css.mjs (CSS) or capture-dart.mjs (Dart)
+2. propose + review                  identical
+3. rewrite the code                  apply-code.mjs --write
+4. record that it happened            before step 5, or step 5 cannot see it
+5. prove no old name survives         check.mjs --after
+6. commit
+```
+
+`rename.config.json` needs `"source": "code"` and no `figma.fileKey`, and
+`code.spellings` has to match the stack — Tailwind needs `tailwind` added, a Dart
+class needs `camel`. `plan.mjs` says which shape it sees and what is missing.
+
+**Rollback is `git revert` on its own.** The batch status lives in the map, the
+map is in the same commit, so one revert restores both the names and the state.
+(`emit-figma --reverse` does not apply here, and refuses.)
 
 ## Claude stops twice — do not click through
 

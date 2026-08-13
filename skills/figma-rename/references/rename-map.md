@@ -86,7 +86,7 @@ can read together, and the thing that makes the change explainable later.
 | `renames[].id` | yes | the Plugin API id. The rename is applied to **this**, not to the name |
 | `renames[].from` | yes | the current name. Validated against the inventory *and* against Figma at apply time |
 | `renames[].to` | yes | the new name |
-| `renames[].source` | no | where the name came from: `rule`, `value`, or `generic` |
+| `renames[].source` | no | where the name came from: `rule`, `value`, `shape`, `generic`, `human` |
 | `renames[].rule` | no | which convention rule produced it; provenance for review |
 | `renames[].reason` | no | why the suggest engine chose this name — the thing review actually checks |
 | `renames[].confidence` | no | `high` / `medium` / `low`, from how many signals agreed |
@@ -122,8 +122,23 @@ which every downstream tool ignores. Promoting it to `code` is a human act:
 ]
 ```
 
-`guard` picks the boundary rule — `ident` (default), `kebab`, `cssvar`, `path`,
-`member`, `dot`. Check the symbol exists before promoting it:
+`guard` picks the boundary rule. All eight, exactly as spelled — the casing is
+inconsistent for historical reasons, which is why a typo is refused rather than
+quietly accepted:
+
+| guard | matches |
+|---|---|
+| `ident` (default) | a whole identifier — no word character either side |
+| `cssvar` | a CSS custom property; `--a-b` never matches inside `--a-b-c` |
+| `kebab` | a hyphenated name at a boundary |
+| `path` | a slash path, e.g. a Figma name in a Code Connect entry |
+| `tailwind` | the token text behind a Tailwind utility prefix (`bg-`, `text-`, …) |
+| `tailwindGroup` | same, but lets a suffix follow — for moving a whole group |
+| `member` | only after a dot: `AppColors.primary` |
+| `dot` | a DTCG dot path |
+
+An unknown guard is a validation error naming these eight. Omitting it is the
+documented default, not a typo. Check the symbol exists before promoting it:
 
 ```bash
 rg -w 'BtnPrimary' --stats
@@ -190,11 +205,34 @@ hand-edited map and a half-applied rename.
 
 ## The lifecycle, and why it is in this file
 
+The ladder is **per source**, and the map records which one applies in its own
+top-level `source` field (`"figma"` or `"code"`, defaulting to `"figma"` for maps
+written before the key existed). Not read from the config at run time: a status
+already recorded has to be interpretable from the map alone, or editing
+`rename.config.json` mid-run silently reinterprets finished work. Loading a map
+whose stamp disagrees with the config refuses.
+
+`source: "figma"` — three states, because Figma can be ahead of the code:
+
 ```
 planned ──emit-figma + use_figma──▶ figma-applied ──apply-code + check──▶ applied
    │                                     │                                  │
    └── editable, re-plannable            └── Figma is ahead of the code      └── commit
 ```
+
+`source: "code"` — two, because there is nothing for the code to be behind.
+`figma-applied` is not skipped here, it is **invalid**, and a map carrying it is
+refused:
+
+```
+planned ──apply-code --write + mark──▶ applied
+   │                                      │
+   └── editable, re-plannable             └── check --after, then commit
+```
+
+**Do not confuse this with `renames[].source`**, which says where a *proposal*
+came from (`rule`, `value`, `shape`, `generic`, `human`). Same word, different
+question: one is about the project, the other about a single row.
 
 Only `review.mjs mark` moves a batch, one step at a time, and the flip lands
 **inside that batch's commit**. So `git revert` on the commit restores the status

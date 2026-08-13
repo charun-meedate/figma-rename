@@ -10,7 +10,7 @@
 - Where the scripts live
 - Step 0 — ask, at every point where there is a choice
   (every step ends with a **Done when** line — that is the test for whether it is finished)
-- Step 1 — inventory: what is actually in the file
+- Step 1 — inventory: what is actually in the file (Figma, or the codebase)
 - Step 2 — plan: propose, and leave the deciding to a person
 - Step 3 — check: refuse before applying
 - Step 4 — apply the batch in Figma
@@ -107,7 +107,7 @@ user's own names in front of them.
 of the people running it are not. A question they have to translate before they
 can answer is a question that gets "whatever you think".
 
-The five rounds, in order. Each one's wording, the options, what each answer
+The six rounds, in order. Each one's wording, the options, what each answer
 costs, and the recommendation to lead with are in
 [`references/asking.md`](references/asking.md) — open it before the first
 question of a run, because a round asked in the abstract gets "whatever you
@@ -115,6 +115,7 @@ think", which is the answer that produces a convention nobody agreed to.
 
 | round | decides |
 |---|---|
+| 0 · where do the names live today? | Figma upstream, hand-written in the repo, or both and drifting — it sets `source` and decides whether the run has a Figma leg at all |
 | 1 · is there already a standard? | whether the project extends a shared convention or invents its own |
 | 2 · what is in scope? | variables · components · inner layers · styles — blast radius differs enormously |
 | 3 · the format | shown with the user's own names, never as an abstract pattern |
@@ -127,8 +128,17 @@ think", which is the answer that produces a convention nobody agreed to.
 ## Step 1 — inventory: what is actually in the file
 
 ```
-use_figma (read-only) ──▶ rename/inventory.json
+source: figma   use_figma (read-only) ──────▶ rename/inventory.json
+source: code    capture-css.mjs / capture-dart.mjs ──▶ rename/inventory.json
 ```
+
+Where it comes from depends on Round 0's answer. **With `source: "code"` the
+capture is a script in this skill** — `capture-css.mjs` for CSS custom
+properties (`--layer color- --flat` for a shadcn-shaped file where `@theme`
+holds the names and `:root` only holds values), `capture-dart.mjs` for a Dart
+token class or a `ThemeExtension`. Both take `--dry-run`, and both print the
+names they derived, because turning `-` into `/` is a guess about the project.
+`references/inventory.md` covers each. The rest of this step is the Figma path.
 
 The inventory is a flat list of `{kind, id, name, scope, value, scopes}`
 captured straight out of Figma. **Capture the values, not just the names** —
@@ -277,6 +287,11 @@ and finding that out **before** the rewrite is the entire point of running it.
 
 ## Step 4 — apply the batch in Figma
 
+> **`source: "code"` skips this step entirely** — there is no Figma to apply to,
+> and `emit-figma` refuses rather than generating a script against a file that
+> does not exist. Go straight to Step 5, then record the write with
+> `review.mjs mark <id> --applied`.
+
 ```bash
 node "$S/emit-figma.mjs" --batch variable-color-semantic
 ```
@@ -316,6 +331,14 @@ person guessing the code name from the Figma name.
 **Done when:** `use_figma` returned the pair list it renamed, its count matches the batch, and `review.mjs mark <id> --figma-applied` has recorded it. Until that mark exists, `apply-code --write` refuses — which is the check on this step, not an obstacle to it.
 
 ## Step 5 — bring the code across
+
+> **Under `source: "code"` this step IS the rename**, and its order is different:
+> `apply-code --write` runs while the batch is still `planned`, then
+> `review.mjs mark <id> --applied` records it, then `check --after` verifies.
+> The mark has to come before the check — until it exists, `check --after` cannot
+> tell a written batch from an unwritten one. There are no dumps to re-capture
+> and nothing to regenerate; re-run `capture-css.mjs` only when the token file
+> changes for some other reason.
 
 Order matters, and it is not the obvious one. Four steps, none of them optional
 if the project uses `figma-token-export`:
@@ -427,8 +450,25 @@ This only works because a batch is one commit and one `use_figma` call. A
 400-rename big-bang has no rollback — that is the real argument for batching,
 not tidiness.
 
+**With `source: "code"` it is simpler, and `emit-figma --reverse` is not part of
+it** — it refuses, correctly, because there is no Figma file to walk back:
+
+```bash
+git revert <the batch commit>          # the rewrite AND the batch status, together
+node "$S/capture-css.mjs" <file>       # the token file moved back; re-read it
+```
+
+The status lives in the map, the map is in the commit, so the revert restores
+`planned` along with the names. That is the whole reason the status is not kept
+in a separate journal. Outside git there is no rollback at all for a code-source
+batch — which is what `check`'s not-in-git warning is really telling you.
+
 ## Pitfalls worth knowing before they cost an afternoon
 
+- **Under `source: "code"`, record the write before you verify it.** `apply-code
+  --write` leaves the batch `planned`; until `mark --applied` runs, `check
+  --after` cannot tell it from a batch nobody has touched and will say there is
+  nothing to verify. It says which batch to mark, but the order is the fix.
 - **A rename in Figma is free; a rename in code is a breaking change.** If the
   design system is a published library, consumers only see the new names after
   it is published — and their code breaks then, not now. Renaming a published

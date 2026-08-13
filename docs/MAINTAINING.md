@@ -155,7 +155,7 @@ convention ที่ copy ไปไว้ในแต่ละโปรเจก
 | ข้อความ | สาเหตุ | ทำยังไง |
 |---|---|---|
 | `rename.config.json not found` | รันนอกโปรเจกต์ หรือยังไม่ได้ copy config | copy จาก example ไปไว้ root |
-| `Could not read …/inventory.json` | ยังไม่ได้ capture inventory | ทำผ่าน `use_figma` (references/inventory.md) |
+| `Could not read …/inventory.json` | ยังไม่ได้ capture inventory | ทำผ่าน `use_figma` (Figma) หรือ `capture-css.mjs` / `capture-dart.mjs` (source: code) |
 | `re-capture the inventory` | ชื่อใน Figma เปลี่ยนหลัง capture | ดึงใหม่ → plan ใหม่ (อย่าฝืน apply) |
 | `"X" would be the name of both A and B` | สองตัวลงชื่อเดียวกันใน collection เดียว | Figma reject อยู่แล้ว แก้ map |
 | `Identifier collision` | ชื่อต่างกันใน Figma แต่แบนเป็น identifier เดียวในโค้ด | เปลี่ยนชื่อใดชื่อหนึ่ง |
@@ -205,7 +205,7 @@ convention ทั้งสองครั้งคำแนะนำถูกต
 มีสองอย่างที่ต้องผ่าน และเป็นคนละเรื่องกัน:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 177 เคส — สคริปต์ยังถูก
+node skills/figma-rename/scripts/selftest.mjs     # 194 เคส — สคริปต์ยังถูก
 ```
 
 กับ **eval** ใน `skills/figma-rename/evals/` ซึ่งทดสอบว่า *agent เดินกระบวนการถูก* —
@@ -239,6 +239,17 @@ selftest เลยจับได้แม้อีก repo จะไม่ไ�
 กฎที่ลำดับสูงกว่าชนะ เวลาปรับให้ขยับทีละข้อแล้วรัน selftest — เคสในนั้นมาจาก
 component จริงที่เคยถูกจัดผิด (ปุ่มกลายเป็น Tooltip, badge ตัวเลขกลายเป็น Radio Button)
 ขยับแรงเกินไปจะพังเคสเหล่านั้นทันที
+
+**เพิ่มการ capture จากที่อื่น** (SCSS, `tailwind.config.js`, token class ของ Kotlin/Swift) —
+ดูโครงของ `capture-css.mjs` เป็นแบบ: export ฟังก์ชันบริสุทธิ์ที่ทดสอบได้ (`definedProperties`,
+`toTokenName`) แยกจาก `main()` แล้วกัน `main()` ไม่ให้รันตอนถูก import ทุก entry ต้องมี
+`id` ที่ระบุตัวได้ (`css:--x`, `dart:Class.member`) เพราะ `emit-figma` ใช้ prefix นั้นตรวจว่า
+ไม่ใช่ id ของ Figma แล้ว `name` ต้องเป็นรูปที่ `toCamel`/`toKebab` แปลงกลับได้ตรง — เทส
+round-trip เป็นข้อบังคับ ไม่ใช่ของแถม เพราะชื่อที่แปลงกลับไม่ตรงทำให้ codemod ไปตามหา
+การสะกดที่ไม่เคยอยู่ในไฟล์
+
+จากนั้นเพิ่ม shape ใน `lib/detect.mjs` ให้ `plan.mjs` แนะนำ spellings ได้เอง และเพิ่ม
+สคริปต์ใหม่ในเทส `--help` (เทสนั้นบังคับว่าทุก CLI ตอบได้โดยไม่ต้องมี config)
 
 **เพิ่มการสะกดใหม่ในโค้ด** (เช่น Kotlin, Swift) — แก้ `lib/codemod.mjs`
 ฟังก์ชัน `spellingsFor` + เพิ่ม guard ใน `GUARDS` แล้วเพิ่มชื่อใน

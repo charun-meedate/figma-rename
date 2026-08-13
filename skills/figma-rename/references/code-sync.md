@@ -10,6 +10,8 @@
 - Namespace classes
 - Reading the dry run
 - What the codemod cannot reach
+- Which spellings a project needs
+- Tailwind, and where the name really lives
 - Verifying
 
 ---
@@ -148,6 +150,31 @@ Say what is out of reach explicitly in the PR description. A rename that is
 "done" in one repo and unannounced in three others is worse than one that was
 never started.
 
+
+## Which spellings a project needs
+
+The prose below explains each shape. This is the lookup, from six real projects:
+
+| shape | how you know | capture | `code.spellings` |
+|---|---|---|---|
+| Figma upstream, web/Flutter generated | a `tokens.config.json` and generated files | `use_figma` read scripts | `figmaPath, cssVar, camel, camelMember, pascal` |
+| Tailwind **v4** | `@theme` in a stylesheet | `capture-css.mjs <file>` | `cssVar, tailwind` |
+| Tailwind v4 from **shadcn** | `@theme inline` mapping `var(--x)` values from `:root` | `capture-css.mjs <file> --layer color- --flat` | `cssVar, tailwind` |
+| Tailwind **v3** | `tailwind.config.js` | `capture-css.mjs <the value file>` | `cssVar` + an explicit `code` pair with guard `tailwindGroup` |
+| Flutter, `static const` class | `pubspec.yaml`, `app_colors.dart` | `capture-dart.mjs <file>` | `camel` |
+| Flutter, `ThemeExtension` | `class X extends ThemeExtension` | `capture-dart.mjs <file>` | `camel` |
+
+`plan.mjs` prints a NOTE when it recognises the shape and the config does not
+cover it. It suggests only — writing the config is a decision.
+
+Two traps the table cannot carry:
+
+- **shadcn's stock names are not yours to rename.** `background`, `card`,
+  `primary`, `ring`, `chart-1…5`, `sidebar-*` are the contract every component
+  and every future `shadcn add` is written against. `convention.ignore` them.
+- **`DEFAULT` in Tailwind v3 is a sentinel**, not a name: `primary.DEFAULT` is
+  what produces `text-primary`. A convention that tidies it into
+  `primary/default` produces a class nobody writes. `**/DEFAULT` in `ignore`.
 
 ## Tailwind, and where the name really lives
 

@@ -4,7 +4,7 @@
 > Just using it, not running scripts → [GETTING-STARTED.en.md](GETTING-STARTED.en.md)
 > Why it works the way it does → [REFERENCE.en.md](REFERENCE.en.md)
 
-## สารบัญ
+## Contents
 
 - [Layout](#layout)
 - [Running the scripts yourself](#running-the-scripts-yourself)
@@ -158,7 +158,7 @@ because "clean consumers but a stale `tokens.css`" means someone skipped step 2.
 | message | cause | what to do |
 |---|---|---|
 | `rename.config.json not found` | run outside the project, or config not copied yet | copy it from the example into the project root |
-| `Could not read …/inventory.json` | the inventory has not been captured | capture it through `use_figma` (references/inventory.md) |
+| `Could not read …/inventory.json` | the inventory has not been captured | capture it through `use_figma` (Figma) or `capture-css.mjs` / `capture-dart.mjs` (source: code) (references/inventory.md) |
 | `re-capture the inventory` | names changed in Figma after the capture | re-read, re-plan — do not force the apply |
 | `"X" would be the name of both A and B` | two things landing on one name in one collection | Figma rejects this anyway; fix the map |
 | `Identifier collision` | different Figma names flatten to one identifier in code | rename one of them differently |
@@ -216,7 +216,7 @@ louder.**
 Two things have to pass, and they check different things:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 177 cases — the scripts are right
+node skills/figma-rename/scripts/selftest.mjs     # 194 cases — the scripts are right
 ```
 
 and the **evals** in `skills/figma-rename/evals/`, which check that the *agent
@@ -255,6 +255,20 @@ Higher priority wins. Move one rule at a time and run the selftest — its cases
 come from real components that were once classified wrong (a button read as
 Tooltip, a numeric badge read as Radio Button), so an over-eager shove breaks
 them immediately.
+
+**Adding a capture from somewhere else** (SCSS, `tailwind.config.js`, a Kotlin or
+Swift token object) — follow `capture-css.mjs`: export the pure, testable
+functions (`definedProperties`, `toTokenName`) separately from `main()`, and
+guard `main()` so importing the file does not run it. Every entry needs an `id`
+that says where it came from (`css:--x`, `dart:Class.member`), because
+`emit-figma` uses that prefix to notice ids that are not Figma's. And `name` has
+to be a form `toCamel`/`toKebab` reverses exactly — the round-trip test is
+mandatory, not decoration: a name that does not survive it sends the codemod
+looking for a spelling that was never in the file.
+
+Then add the shape to `lib/detect.mjs` so `plan.mjs` can recommend the spellings,
+and add the new script to the `--help` test, which asserts every CLI answers
+without needing a config.
 
 **Adding a new code spelling** (Kotlin, Swift, …) — edit `spellingsFor` in
 `lib/codemod.mjs`, add a guard to `GUARDS`, and register the name in
