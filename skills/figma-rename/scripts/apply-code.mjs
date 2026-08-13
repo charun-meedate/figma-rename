@@ -159,7 +159,15 @@ async function main() {
   // silently concludes nothing changed.
   const pairsByRename = renames.map((r) => ({ rename: r, pairs: spellingsFor(r, config.code) }));
   const tokenPairs = pairsByRename.flatMap((entry) => entry.pairs);
-  const classes = args['no-namespace-classes']
+  // Namespace classes exist to mirror what figma-token-export's generators emit.
+  // A code-source project has no generator, so every name they predict is a name
+  // nothing writes — and the pairs are bare identifiers, which is the most
+  // dangerous shape to guess with.
+  const skipClasses = args['no-namespace-classes'] || codeSource;
+  if (codeSource && !args['no-namespace-classes']) {
+    console.log('[apply-code] generated-class rewrites skipped: no generator on a code-source project.');
+  }
+  const classes = skipClasses
     ? { pairs: [], advisories: [] }
     : namespaceClassPairs(renames, { ...config.code, allTokenNames });
   const classPairs = classes.pairs;

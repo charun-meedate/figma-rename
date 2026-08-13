@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { definedProperties, toTokenName } from './capture-css.mjs';
 import { dartTokenClasses, memberToTokenName } from './capture-dart.mjs';
 import { detectStack, stackAdvice } from './lib/detect.mjs';
+import { namespaceClassPairs as nsPairsForTest } from './lib/codemod.mjs';
 import { frozenStatuses, ladderFor, sourceOf, validateShape } from './lib/map.mjs';
 import { toCamel as toCamelForTest } from './lib/naming.mjs';
 import { buildReplacer, namespaceClassPairs, rewrite, spellingsFor } from './lib/codemod.mjs';
@@ -2136,6 +2137,37 @@ function reviewedBatch(dir) {
   run('review.mjs', ['accept', '--batch', id, '--all'], dir);
   return id;
 }
+
+test('a leaf token name is not a namespace', () => {
+  // Found by running a real code-source project end to end. `primary` has no
+  // group, so treating it as one produced `primary -> brand` guarded as a bare
+  // identifier, which then matched `--primary:` in a :root block the capture had
+  // deliberately excluded — and would match `const primary` just as happily.
+  const leaf = nsPairsForTest(
+    [{ id: '1', from: 'primary', to: 'brand', kind: 'variable' }],
+    { flutterPrefix: 'App', allTokenNames: ['primary'] },
+  );
+  assert.deepEqual(leaf.pairs, [], 'a name with no slash has no namespace to rename');
+
+  // A real namespace still produces its classes.
+  const nested = nsPairsForTest(
+    [{ id: '2', from: 'color/red', to: 'palette/red', kind: 'variable' }],
+    { flutterPrefix: 'App', allTokenNames: ['color/red'] },
+  );
+  assert.ok(nested.pairs.some((p) => p.from === 'AppColors' && p.to === 'AppPaletteColors'));
+});
+
+test('code-source skips generated-class rewrites, and says it did', () => {
+  // There is no generator, so every class name they predict is a name nothing
+  // writes — and they are bare identifiers, the most dangerous shape to guess.
+  const dir = codeSourceProject();
+  const id = reviewedBatch(dir);
+  const result = run('apply-code.mjs', ['--batch', id, '--write'], dir);
+  assert.equal(result.ok, true, result.out);
+  assert.match(result.out, /generated-class rewrites skipped/);
+  // and the :root value the capture excluded is left alone
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 test('detectStack tells the shapes apart, including the two Tailwind v4s', async () => {
   // Two v4 apps needed different captures because one was scaffolded from

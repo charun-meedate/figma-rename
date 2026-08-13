@@ -283,6 +283,9 @@ async function main() {
 
 /** Counts, per rename, how many places in the codebase would actually change. */
 async function reportCodeHits(config, renames, warnings, allTokenNames, noClasses = false) {
+  // Mirrors apply-code: with no generator there are no generated classes, and
+  // guessing bare identifiers is how a rename reaches code it has no business in.
+  if (config.source === 'code') noClasses = true;
   // apply-code has always had this escape hatch; check did not, so a namespace
   // the Flutter generator special-cases (`colors` -> AppColors) made the
   // documented preflight impossible to run at all — the one command whose whole
@@ -365,6 +368,7 @@ async function reportCodeHits(config, renames, warnings, allTokenNames, noClasse
 
 /** After applying: nothing may still be spelled the old way. */
 async function checkAfter(config, renames, allTokenNames, noClasses = false) {
+  if (config.source === 'code') noClasses = true;
   const classes = noClasses
     ? { pairs: [], advisories: [] }
     : namespaceClassPairs(renames, { ...config.code, allTokenNames });

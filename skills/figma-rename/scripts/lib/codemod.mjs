@@ -218,6 +218,12 @@ export function namespaceClassPairs(renames, { flutterPrefix = 'App', allTokenNa
   const movedNames = new Map(); // fromNs -> Set of old token names
   for (const r of renames) {
     if (!TOKEN_KINDS.has(r.kind)) continue;
+    // A single-segment name has no namespace: `primary` is the token, not the
+    // group it belongs to. Treating it as one produced a bare-identifier pair
+    // equal to the token's own name, which then matched `--primary:`, `const
+    // primary =`, and the word in any object literal — found by running a real
+    // code-source project end to end.
+    if (!r.from.includes('/') || !r.to.includes('/')) continue;
     const from = nsOf(r.from);
     const to = nsOf(r.to);
     if (!from || !to || from === to) continue;

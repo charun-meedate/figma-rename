@@ -1,0 +1,24 @@
+{
+  "id": "eval-06-code-source",
+  "skill": "figma-rename",
+  "tests": "โปรเจกต์ที่ไม่มี Figma อยู่ข้างหลัง — เส้นทางที่ไม่มีขา Figma เลย",
+  "query": "ชื่อ css variable ในโปรเจกต์นี้มันมั่วอยู่ ช่วยจัดให้ตรงมาตรฐานหน่อย",
+  "files": [
+    "โปรเจกต์เป็น Vite + React + Tailwind v4 ไม่มีลิงก์ Figma ไม่มี tokens.config.json และไม่มีใครพูดถึง Figma",
+    "src/styles.css เป็นแบบ shadcn สองชั้น — :root เก็บค่า (--primary: #123) แล้ว @theme inline map เป็นชื่อ (--color-primary: var(--primary)) พร้อมคอมเมนต์คั่นเป็นหมวด",
+    "โค้ดเรียกใช้ผ่านชื่อคลาสเป็นหลัก (bg-primary, text-primary-dark) มี var(--…) อยู่ไม่กี่จุด",
+    "ยังไม่มี rename.config.json"
+  ],
+  "expected_behavior": [
+    "ถาม Round 0 ก่อนเป็นอันดับแรก — ชื่ออยู่ใน Figma หรือเขียนมือในโค้ด — และไม่ขอลิงก์ Figma เพราะคำตอบทำให้ไม่มีลิงก์ให้ขอ",
+    "ตั้ง \"source\": \"code\" ใน rename.config.json และไม่ใส่ figma.fileKey",
+    "ใช้ capture-css.mjs สร้าง inventory ไม่ใช่ use_figma และไม่เรียก Figma MCP เลยแม้แต่ครั้งเดียว",
+    "จับได้ว่าไฟล์เป็นแบบสองชั้น แล้ว capture จากชั้น @theme (--layer color- --flat) ไม่ใช่จาก :root — เพราะชื่อที่ Tailwind อ่านอยู่ชั้นนั้น",
+    "เปิด spelling `tailwind` ใน code.spellings (หรืออธิบายว่าทำไมไม่เปิด) — ถ้าไม่เปิด การเรียกใช้ผ่านชื่อคลาสทั้งหมดจะไม่ถูกแก้ แต่ผลลัพธ์จะรายงานว่าสำเร็จ",
+    "รู้ว่าชื่อชุด shadcn (background, card, primary, ring, chart-*, sidebar-*) เป็นสัญญาของ library ไม่ใช่ของทีม — เสนอให้ ignore ไม่ใช่เปลี่ยนชื่อ",
+    "ลำดับตอนลงจริงถูก: apply-code --write → review.mjs mark <id> --applied → check --after — mark มาก่อน check ไม่งั้น check --after มองไม่เห็นว่า batch นี้ถูกเขียนแล้ว",
+    "ไม่พยายามรัน emit-figma และถ้ารันโดนปฏิเสธก็ไม่ไปหาทางอ้อม",
+    "บอกว่าย้อนกลับด้วย git revert เฉย ๆ ไม่ใช่ emit-figma --reverse"
+  ],
+  "baseline_failure": "ขอลิงก์ Figma ตั้งแต่ต้นเพราะชื่อ skill มีคำว่า figma หรือถ้าเริ่มถูกก็ capture จาก :root แล้วเปิด spelling tailwind ด้วย ทำให้ชื่อคลาสถูกเขียนไปเป็นชื่อที่ไม่มี @theme entry รองรับ — คลาสหยุดทำงานเงียบ ๆ โดยที่ทุกคำสั่งขึ้นเขียว"
+}
