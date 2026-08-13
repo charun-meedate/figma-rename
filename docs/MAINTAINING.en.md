@@ -4,6 +4,19 @@
 > Just using it, not running scripts → [GETTING-STARTED.en.md](GETTING-STARTED.en.md)
 > Why it works the way it does → [REFERENCE.en.md](REFERENCE.en.md)
 
+## สารบัญ
+
+- [Layout](#layout)
+- [Running the scripts yourself](#running-the-scripts-yourself)
+- [Minimum config](#minimum-config)
+- [The order that must not be swapped](#the-order-that-must-not-be-swapped)
+- [Troubleshooting](#troubleshooting)
+- [Confirmed limits](#confirmed-limits)
+- [Changing the skill](#changing-the-skill)
+- [Further reading](#further-reading)
+
+---
+
 ---
 
 ## Layout

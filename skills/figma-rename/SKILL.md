@@ -82,6 +82,7 @@ Deeper detail lives in `./references/`, loaded on demand:
 | file | when |
 |---|---|
 | [`presets/`](presets/) | the shared standards (`aurora`, `starter`) a project `extends` |
+| [`references/asking.md`](references/asking.md) | wording the five questions Step 0 asks, in the user's own names |
 | [`references/naming-convention.md`](references/naming-convention.md) | deciding the target convention, writing it as rules, and sharing it |
 | [`references/suggest-engine.md`](references/suggest-engine.md) | naming a variable from its value, and what it refuses to guess |
 | [`references/inventory.md`](references/inventory.md) | reading what exists out of Figma (`use_figma` read scripts) |

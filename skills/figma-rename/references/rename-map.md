@@ -225,7 +225,7 @@ exactly what is in motion:
 
 `--fresh` discards pending decisions. Nothing discards an applied batch.
 
-## Editing it by hand: don't
+## Editing it by hand
 
 Every field above is written by a tool, and `review.mjs` is the only writer of
 `decision` and `status`. Hand-edits are not forbidden — it is JSON — but a

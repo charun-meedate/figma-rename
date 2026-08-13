@@ -3,6 +3,21 @@
 > [ภาษาไทย](GETTING-STARTED.md) · English
 > Maintaining the skill / how it works inside → [MAINTAINING.en.md](MAINTAINING.en.md) · [REFERENCE.en.md](REFERENCE.en.md)
 
+## สารบัญ
+
+- [One thing to understand before starting](#one-thing-to-understand-before-starting)
+- [One-time setup](#one-time-setup)
+- [First run — tell Claude what to rename](#first-run-tell-claude-what-to-rename)
+- [Claude asks in five rounds — answer what you know](#claude-asks-in-five-rounds-answer-what-you-know)
+- [Claude stops twice — do not click through](#claude-stops-twice-do-not-click-through)
+- [What happens when you approve](#what-happens-when-you-approve)
+- [If something goes wrong](#if-something-goes-wrong)
+- [Four things not to do](#four-things-not-to-do)
+- [If Claude says it is stuck, it means...](#if-claude-says-it-is-stuck-it-means)
+- [Going deeper](#going-deeper)
+
+---
+
 You do not run any scripts. **Claude Code does that.** You have exactly two
 jobs: **agree what the names should look like**, and **read the proposal before
 approving it**. This guide covers what to say, and what you get back.

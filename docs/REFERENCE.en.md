@@ -2,6 +2,20 @@
 
 > [ภาษาไทย](REFERENCE.md) · English
 
+## สารบัญ
+
+- [What it can rename](#what-it-can-rename)
+- [The flow](#the-flow)
+- [One standard across projects (`extends`)](#one-standard-across-projects-extends)
+- [Naming a component from its structure](#naming-a-component-from-its-structure)
+- [Smart Suggest — naming a variable from its own value](#smart-suggest-naming-a-variable-from-its-own-value)
+- [Where this skill refuses to guess](#where-this-skill-refuses-to-guess)
+- [What is checked before anything is applied (`check.mjs`)](#what-is-checked-before-anything-is-applied-checkmjs)
+- [Test status](#test-status)
+- [Skill layout](#skill-layout)
+
+---
+
 Rename tokens and components in Figma while keeping the names in code in step.
 This document explains how each part works and why.
 If you are starting out, read [GETTING-STARTED.en.md](GETTING-STARTED.en.md) first.

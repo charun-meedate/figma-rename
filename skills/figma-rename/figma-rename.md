@@ -11,7 +11,7 @@
 - Step 0 — ask, at every point where there is a choice
   (every step ends with a **Done when** line — that is the test for whether it is finished)
 - Step 1 — inventory: what is actually in the file
-- Step 2 — plan: propose, do not decide
+- Step 2 — plan: propose, and leave the deciding to a person
 - Step 3 — check: refuse before applying
 - Step 4 — apply the batch in Figma
 - Step 5 — bring the code across
@@ -45,6 +45,22 @@ Figma ──inventory──▶ inventory.json ──plan──▶ rename-map.jso
 `rename-map.json` is the contract. Both sides derive from the same list of
 pairs, which is what stops the Figma names and the code names from drifting
 apart — there is one list, not two.
+
+Copy this into your reply at the start of **each batch** and tick as you go.
+A rename lands on two systems at once, so a step skipped here leaves Figma and
+the code disagreeing — the exact state this skill exists to prevent.
+
+```
+Batch <id> progress:
+- [ ] 2 · plan — rename-map.json written, every status counted
+- [ ] 3 · check.mjs exits 0 — errors cleared, warnings read — if not, back to 2
+- [ ] 4 · applied in Figma, pair count matches, marked --figma-applied
+- [ ] 5 · dumps RE-CAPTURED AFTER the Figma rename, tokens regenerated, apply-code --write
+- [ ] 6 · check.mjs --after exits 0, build and tests pass, marked --applied, one commit
+```
+
+Step 5's capital letters are there because regenerating from older dumps
+restores the old names and every check still comes back green.
 
 ## Where the scripts live
 
@@ -87,138 +103,20 @@ user's own names in front of them.
 of the people running it are not. A question they have to translate before they
 can answer is a question that gets "whatever you think".
 
-### Round 1 — is there already a standard?
+The five rounds, in order. Each one's wording, the options, what each answer
+costs, and the recommendation to lead with are in
+[`references/asking.md`](references/asking.md) — open it before the first
+question of a run, because a round asked in the abstract gets "whatever you
+think", which is the answer that produces a convention nobody agreed to.
 
-**"Does your team already have a naming standard, or is this the first time?"**
-
-This decides everything downstream, because it decides whether the project gets
-its own convention or inherits the shared one.
-
-| answer | what to do |
+| round | decides |
 |---|---|
-| there is a shared standard | `"extends": "aurora"`, or a path to the team's file |
-| there is a document, not a config | encode it once as a preset or shared file, then extend that |
-| there is nothing yet | `"extends": "starter"`, and tighten it as answers arrive |
+| 1 · is there already a standard? | whether the project extends a shared convention or invents its own |
+| 2 · what is in scope? | variables · components · inner layers · styles — blast radius differs enormously |
+| 3 · the format | shown with the user's own names, never as an abstract pattern |
+| 4 · the review | the one part only a person can do |
+| 5 · before applying | batch size, and where the run is going |
 
-Say the consequence in one line: **a convention that lives inside one project
-is a convention that will disagree with the next project.** Encoding a document
-into the project's own config is how a standard quietly becomes two.
-
-The project should then override almost nothing — normally just
-`figma.fileKey` and `code.*`, which are facts about the repo rather than naming
-decisions. `node "$S/plan.mjs" --print-config` shows the merged result and
-which file the base came from.
-
-### Round 2 — what is in scope
-
-**"What should I rename this time?"** (multi-select) — variables/tokens,
-components and component sets, layers inside a component, text/effect styles.
-
-Say what each costs, because the blast radii are nothing alike: a variable
-rename reaches every line of token-consuming code; a layer rename inside a
-component reaches almost nothing. Recommend one kind and the smallest
-collection for a first run.
-
-**"Everything, or one collection?"** Recommend one. A thousand-variable file is
-not reviewable in a single pass, and one batch is one commit is one rollback.
-
-### Round 3 — the format, shown with their own names
-
-Do this **after** the inventory, never before. By then the options can be shown
-as what they actually produce:
-
-```
-now                        kebab                    camel
-color/bg-raised         →  color/surface/raised     color/surfaceRaised
-palette/red/500         →  palette/red/500          palette/red/500
-```
-
-(Case applies per segment, so the slashes stay. `colorSurfaceRaised` is the CODE
-spelling that `figma-token-export` derives — it is not an option for the Figma
-name, and offering it as one invites a file named the way the code is.)
-
-Ask only about what this file actually needs — never offer a menu of options
-the file has no examples of:
-
-| ask about | where the answer goes |
-|---|---|
-| **case per segment** — kebab, camel, Pascal, snake | `convention.segmentCase` |
-| **prefix** — strip `palette/`, add `primitive/` | `convention.transform.stripPrefix` / `.addPrefix` |
-| **separator** — only if the file mixes `-` and `/` for hierarchy | `convention.transform.separator` |
-| **number scale** — `spacing/md` or `spacing/4` | `convention.sizeNaming` |
-
-None of them needs a glob rule. The two `transform` ones also take
-`stripSuffix` and `replace` (whole-segment find/replace). Getting the block
-wrong used to be silent — a string where an array belongs did nothing at all —
-so it is validated now and says which key you meant.
-
-If an answer differs from the shared standard, say so out loud: it is either a
-project exception worth writing down, or a change the standard should absorb.
-
-### Round 4 — the review, which is the one part only a person can do
-
-`emit-figma` refuses a batch with undecided rows, so this round is not optional
-and cannot be skipped by saying yes to something else. **You are the checkbox
-UI**: read the full list, group it, and record every answer through
-`review.mjs` — never by editing the JSON, which a re-plan would overwrite.
-
-```bash
-node "$S/review.mjs" status                     # what is open
-node "$S/review.mjs" list --batch <id> --json   # every row, untruncated
-```
-
-Group before asking. Three hundred rows collapse into a handful of questions:
-
-- **by rule** — "28 rows come from `color/text-* → text/$1/default`; here are 3
-  of them. Accept the group?" A rule is a decision the team already made, so the
-  question is whether the rule did what they meant, asked once.
-  → `review.mjs accept --batch <id> --rule "<rule>"`
-- **by confidence tier** — high as one group; medium in chunks with samples;
-  **low one at a time**, because those are the guesses.
-  → `review.mjs accept --batch <id> --min-confidence high`
-- **the open questions, individually.** These are the ones no formula could
-  answer, and they are the reason this round exists:
-
-```
-Color 5      alias of colors/blue/500 — a semantic token, so its name is its ROLE
-             (brand? error? surface?), which the value cannot tell you
-Color 1      same value as "primary" — both would be colors/blue/500
-brand        1 segment, minSegments is 2
-btn primary  its shape reads as "Button", and so does "Button/Primary"
-```
-
-Ask each one plainly, offer what you would pick, then record it:
-
-```bash
-node "$S/review.mjs" resolve <id> --to palette/brand      # answer it
-node "$S/review.mjs" skip <id> --note "brand is fine"     # leave it alone, permanently
-node "$S/review.mjs" set-to <id> --to <name>              # fix a proposal
-node "$S/review.mjs" reject --batch <id> --ids A,B        # not this one
-```
-
-Skips and hand-written names survive re-planning; a deleted JSON row does not.
-
-### Round 5 — before applying
-
-**"Start with this batch?"** Name the batch, its size, and what will happen:
-Figma, then re-capture dumps, then regenerate, then code, then one commit.
-Confirm the project is on a branch with a clean tree.
-
-### Say where the run is going
-
-Renaming is not the point. **Matching the standard so the exported code is
-predictable is the point** — and saying that is what makes the questions above
-feel worth answering:
-
-```
-figma-rename        names match the shared standard
-      ↓
-figma-token-export  those names become --color-surface-raised / AppColors.surfaceRaised
-```
-
-Which is also why `cssPrefix` and `flutterPrefix` in `code.*` must match that
-project's `tokens.config.json`. If they do not, the codemod matches nothing and
-silently does no work. Check it while asking, not afterwards.
 
 **Done when:** every round has an answer on record — including "whatever you think" — the config names the standard it extends, and the user has seen the batch size they are agreeing to. A run where nothing was asked is not done, it is unstarted.
 
@@ -267,7 +165,7 @@ Re-capture the inventory before every planning pass. It is one read call.
 
 **Done when:** `rename/inventory.json` exists, every entry carries an `id`, token entries carry values and `scopes`, and it was captured after the last change anyone made to the file. If it has names but no ids, it is a report, not an inventory.
 
-## Step 2 — plan: propose, do not decide
+## Step 2 — plan: propose, and leave the deciding to a person
 
 ```bash
 node "$S/plan.mjs"                          # every kind in config.kinds
@@ -551,35 +449,32 @@ not tidiness.
 - **Library (remote) entities cannot be renamed from a consuming file.** Both
   `check.mjs` and the generated script report them rather than half-applying;
   open the source file.
-- **Never rename and re-value in the same batch.** A batch whose diff contains
+- **Keep a batch to renames only.** A batch whose diff contains
   both is unreviewable, and when something looks wrong afterwards there is no
   way to tell which half did it.
 - **`get_metadata`'s page listing can be incomplete.** On at least one
   production file it reports only the cover page. When a page looks empty, ask
   for a node-specific link rather than concluding there is nothing there.
-- **Do not hand-edit generated token files to "help".** They are rebuilt from
+- **Let the generator rewrite the token files.** They are rebuilt from
   `tokens.json`; the help is erased by the next generate.
 
 ## Verifying the tooling itself
 
 ```bash
-node "$S/selftest.mjs"
+node "$S/selftest.mjs"          # the scripts still work
 ```
 
-Builds a throwaway project in a temp directory and drives the real CLIs over
-it — convention rules and templates, boundary guards, simultaneous chain and
-swap rewriting, the `check` refusals (stale map, duplicate target, identifier
-collision), `emit-figma` staging and reverse, `apply-code` dry-run vs `--write`,
-and `check --after` both passing and failing. Run it after touching anything in
-`scripts/`.
+Run it after touching anything in `scripts/`. What it covers is recorded in the
+project's `docs/MAINTAINING.md`.
 
-It also asserts that every naming function shared with `figma-token-export` is
-byte-identical. That check exists because the codemod's whole correctness rests
-on producing the same identifiers that skill's generators emit; if the two
+One assertion in there is worth knowing about: every naming function shared with
+`figma-token-export` must be byte-identical. The codemod's correctness rests on
+producing exactly the identifiers that skill's generators emit — if the two
 drift, the rewrite renames things to spellings nothing generates.
 
 ## Reference files
 
+- `references/asking.md` — the five rounds of Step 0, worded for a person who has read none of this
 - `references/naming-convention.md` — the segment model, and writing it as rules
 - `references/suggest-engine.md` — naming a variable from its value, and what it refuses to guess
 - `references/inventory.md` — the read-only `use_figma` scripts, per kind
