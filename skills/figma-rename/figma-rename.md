@@ -9,6 +9,7 @@
 
 - Where the scripts live
 - Step 0 — ask, at every point where there is a choice
+  (every step ends with a **Done when** line — that is the test for whether it is finished)
 - Step 1 — inventory: what is actually in the file
 - Step 2 — plan: propose, do not decide
 - Step 3 — check: refuse before applying
@@ -219,6 +220,8 @@ Which is also why `cssPrefix` and `flutterPrefix` in `code.*` must match that
 project's `tokens.config.json`. If they do not, the codemod matches nothing and
 silently does no work. Check it while asking, not afterwards.
 
+**Done when:** every round has an answer on record — including "whatever you think" — the config names the standard it extends, and the user has seen the batch size they are agreeing to. A run where nothing was asked is not done, it is unstarted.
+
 ## Step 1 — inventory: what is actually in the file
 
 ```
@@ -261,6 +264,8 @@ Commit it. Two reasons, both load-bearing:
    and reports success.
 
 Re-capture the inventory before every planning pass. It is one read call.
+
+**Done when:** `rename/inventory.json` exists, every entry carries an `id`, token entries carry values and `scopes`, and it was captured after the last change anyone made to the file. If it has names but no ids, it is a report, not an inventory.
 
 ## Step 2 — plan: propose, do not decide
 
@@ -339,6 +344,8 @@ Batches are grouped by kind and collection/page, and split at `--max-batch`
 deck's "แบ่งแก้ทีละหมวด" made mechanical: a 400-token rename that fails at
 token 380 is unreviewable and unrevertable; ten batches of 40 are both.
 
+**Done when:** `rename-map.json` exists and `plan.mjs` printed a count for every status. Rows in `needsReview` are expected here — leaving them unanswered is Step 0's Round 4, not a failure of this step.
+
 ## Step 3 — check: refuse before applying
 
 ```bash
@@ -367,6 +374,8 @@ Every failure here is cheap; the same failure after applying is not.
 spelling. Read the "matched nothing" list: a token you know is used appearing
 there means the codebase spells it in a way `code.spellings` does not cover,
 and finding that out **before** the rewrite is the entire point of running it.
+
+**Done when:** `check.mjs` exits 0. Warnings may remain and each one has been read; errors may not. If it refuses, the fix is the map or the config, never the check.
 
 ## Step 4 — apply the batch in Figma
 
@@ -405,6 +414,8 @@ That also writes `variable.setVariableCodeSyntax(...)` so Figma's Dev Mode
 shows the exact code spelling (`var(--text-primary-default)`,
 `textPrimaryDefault`). It is the cheapest possible defence against the next
 person guessing the code name from the Figma name.
+
+**Done when:** `use_figma` returned the pair list it renamed, its count matches the batch, and `review.mjs mark <id> --figma-applied` has recorded it. Until that mark exists, `apply-code --write` refuses — which is the check on this step, not an obstacle to it.
 
 ## Step 5 — bring the code across
 
@@ -483,6 +494,8 @@ spelling only matches after a dot. `references/code-sync.md` has the rest,
 including why component code symbols come from explicit `code` pairs instead of
 being derived.
 
+**Done when:** dumps were re-captured *after* the Figma rename, tokens were regenerated from them, `apply-code --write` reported the files it changed, and the project builds. Regenerating from older dumps restores the old names and everything still looks green.
+
 ## Step 6 — verify, then commit the batch
 
 ```bash
@@ -498,6 +511,8 @@ skipped the regenerate step, and that is exactly the state this catches.
 Then go back to step 4 with the next batch. One batch, one commit, every time.
 The deck's step 6 — "ตรวจก่อนไปหมวดถัดไป, สั่ง commit ทุกรอบ" — is not
 ceremony: it is what makes the next paragraph possible.
+
+**Done when:** `check.mjs --after` exits 0, the build and tests pass, `review.mjs mark <id> --applied` has run, and the batch is one commit that contains the map. Then the next batch starts at Step 2, not here.
 
 ## Rolling a batch back
 
