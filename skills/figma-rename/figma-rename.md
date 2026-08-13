@@ -87,6 +87,10 @@ Everything the scripts read or write — `rename.config.json`, `inventory.json`,
 `rename-map.json`, the codebase — lives in the **project**, resolved relative to
 `rename.config.json`. Only the code lives in the skill.
 
+Every script takes `--help` and answers without needing a config, so the flag
+lists are not repeated below. This manual covers what the flags are *for*; the
+scripts cover what they are called.
+
 ## Step 0 — ask, at every point where there is a choice
 
 This skill exists so that several projects end up agreeing on one set of names.
@@ -168,12 +172,8 @@ Re-capture the inventory before every planning pass. It is one read call.
 ## Step 2 — plan: propose, and leave the deciding to a person
 
 ```bash
-node "$S/plan.mjs"                          # every kind in config.kinds
-node "$S/plan.mjs" --kind variable          # one kind
-node "$S/plan.mjs" --only "color/**"        # one slice
-node "$S/plan.mjs" --max-batch 25           # smaller batches
-node "$S/plan.mjs" --min-confidence medium  # drop low-confidence suggestions
-node "$S/plan.mjs" --no-suggest             # convention rules only
+node "$S/plan.mjs"                    # every kind in config.kinds
+node "$S/plan.mjs" --kind variable    # narrow it — see --help for the rest
 ```
 
 `plan.mjs` walks the inventory through the convention and writes

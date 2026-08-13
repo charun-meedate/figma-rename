@@ -41,8 +41,26 @@ function slug(text) {
   return String(text).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'default';
 }
 
+const USAGE = `
+plan.mjs — propose new names into rename/rename-map.json (a proposal, not a decision)
+
+  --kind <k>              one kind only: variable, component, componentSet, layer,
+                          textStyle, effectStyle, paintStyle
+  --only <glob>           one slice of names, e.g. "color/**"
+  --max-batch <n>         split batches at n rows (default 40)
+  --min-confidence <c>    drop value-based suggestions below low|medium|high
+  --no-suggest            convention rules only, no value-based naming
+  --fresh                 discard pending decisions; applied batches are kept
+  --dry-run               print the summary, write nothing
+  --print-config          show the merged config and which file it extends
+  --config <path>         use a config other than ./rename.config.json
+
+Next: review.mjs status
+`;
+
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
+    usage: USAGE,
     flags: [...COMMON_FLAGS, ...['kind','only','max-batch','min-confidence','no-suggest','fresh','dry-run','print-config']],
     wantsValue: ['config','kind','only','max-batch','min-confidence'],
   });

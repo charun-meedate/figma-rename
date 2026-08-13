@@ -50,6 +50,9 @@ S=".claude/skills/figma-rename/scripts"          # installed into the project
 
 ## Running the scripts yourself
 
+Every script takes `--help` and answers without a config — the full flag list
+lives there. Below are the ones used often.
+
 ```bash
 cp "$S/rename.config.example.json" rename.config.json    # once per project
 
@@ -163,6 +166,28 @@ because "clean consumers but a stale `tokens.css`" means someone skipped step 2.
 
 ---
 
+
+## When the skill itself misbehaves
+
+The table above fixes problems with a *run*. This one fixes problems with the
+*skill* — when the scripts are all correct and the agent still does not follow
+what is written. Adapted from
+[make-skill-great](https://github.com/punnaruthaphi/make-skill-great).
+
+| Symptom | Usual cause | Where to fix it |
+|---|---|---|
+| never invoked | `description` lacks the words users actually type | the `description` in `SKILL.md`, not the body |
+| invoked for unrelated work | triggers too broad, or forceful language | collapse triggers to genuinely distinct cases, lower the intensity |
+| stops while unfinished | vague completion conditions | that step's **Done when** line in `figma-rename.md` |
+| does the thing you forbade | a prohibition makes the behaviour more salient | rewrite leading with what to do, keeping the prohibition as the exception |
+| never opens a `references/` file | the pointer is worded weakly | reword the pointer before pulling the content back inline |
+| skips a step entirely | the instruction sits too deep to be read | move it into `SKILL.md`, the one file always loaded |
+| grows without improving | sediment, until what matters is buried | run a full prune pass — see the next section |
+
+The bottom two both happened to this skill: the MCP shortcut during inventory,
+and the convention questions being skipped. Both times the guidance was already
+correct and three files too deep. **What worked was moving it up, not saying it
+louder.**
 ## Confirmed limits
 
 - **The team is on the Organization plan, not Enterprise** — the REST Variables
@@ -188,7 +213,7 @@ because "clean consumers but a stale `tokens.css`" means someone skipped step 2.
 Two things have to pass, and they check different things:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 164 cases — the scripts are right
+node skills/figma-rename/scripts/selftest.mjs     # 165 cases — the scripts are right
 ```
 
 and the **evals** in `skills/figma-rename/evals/`, which check that the *agent

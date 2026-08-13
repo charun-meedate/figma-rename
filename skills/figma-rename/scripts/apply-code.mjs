@@ -36,8 +36,21 @@ import { COMMON_FLAGS, loadConfig, parseArgs } from './lib/config.mjs';
 import { loadInventory } from './lib/inventory.mjs';
 import { batchById, isFrozen, loadMap, pendingRenames, selectRenames, statusOf } from './lib/map.mjs';
 
+const USAGE = `
+apply-code.mjs — rewrite the codebase for a batch Figma has already applied
+
+  (no flags)              dry run: report what would change, write nothing
+  --write                 actually rewrite the files
+  --batch <id>            one batch (default: every figma-applied batch)
+  --kind <k>              one kind only
+  --no-namespace-classes  skip generated class-name rewrites
+  --include-generated     also rewrite generated files (normally the generator's job)
+  --config <path>         use a config other than ./rename.config.json
+`;
+
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
+    usage: USAGE,
     flags: [...COMMON_FLAGS, ...['batch','kind','write','include-generated','no-namespace-classes']],
     wantsValue: ['config','batch','kind'],
   });

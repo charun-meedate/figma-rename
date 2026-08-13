@@ -389,7 +389,15 @@ function withArtifactExcludes(config, rootDir) {
  * `wantsValue` names the flags that take one, so `--config` with nothing after
  * it fails here instead of reaching `path.resolve(true)`.
  */
-export function parseArgs(argv = process.argv.slice(2), { flags = null, wantsValue = [] } = {}) {
+export function parseArgs(argv = process.argv.slice(2), { flags = null, wantsValue = [], usage = null } = {}) {
+  // --help was accepted as a flag and then did nothing: it fell through to
+  // config loading, so asking for help returned "rename.config.json not found".
+  // It also meant the manual had to carry every flag list itself, at a token
+  // cost paid on every run rather than only when someone asks.
+  if (usage && (argv.includes('--help') || argv.includes('-h'))) {
+    console.log(usage.trim());
+    process.exit(0);
+  }
   const args = { _: [] };
   const needsValue = new Set(wantsValue);
   for (let i = 0; i < argv.length; i++) {

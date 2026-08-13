@@ -2054,6 +2054,21 @@ test('plan says when every naming decision was inherited, not chosen', () => {
   fs.rmSync(chosen, { recursive: true, force: true });
 });
 
+test('every CLI answers --help without a config, and exits 0', () => {
+  // --help was in the accepted-flag list and did nothing: it fell through to
+  // config loading, so asking for help returned "rename.config.json not found".
+  // It also forced the manual to carry every flag list itself, at a token cost
+  // paid on every run rather than only when someone asks.
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-help-'));
+  for (const cli of ['plan.mjs', 'review.mjs', 'check.mjs', 'emit-figma.mjs', 'apply-code.mjs']) {
+    const result = run(cli, ['--help'], empty);
+    assert.equal(result.ok, true, `${cli} --help should exit 0, got: ${result.out}`);
+    assert.doesNotMatch(result.out, /not found|Could not read/, `${cli} --help must not need a config`);
+    assert.match(result.out, /--config/, `${cli} --help should list its flags`);
+  }
+  fs.rmSync(empty, { recursive: true, force: true });
+});
+
 test('check says so when the project is not in git', () => {
   // The rollback story is "one batch, one commit, git revert" — stated in the
   // manual, the README and SKILL.md — and nothing verified the precondition.

@@ -54,8 +54,24 @@ function checkNameLegality(to, errors, at) {
   if (!SAFE_NAME.test(to)) errors.push(`${at}: "${to}" contains characters outside [A-Za-z0-9 _.&+()/-].`);
 }
 
+const USAGE = `
+check.mjs — refuse before anything is touched
+
+  (no flags)              check the map against the inventory
+  --code                  also scan the repo and count what would change
+  --after                 post-apply: no old spelling may survive anywhere
+  --batch <id>            one batch only
+  --kind <k>              one kind only
+  --no-namespace-classes  skip generated class-name rewrites; needed when a
+                          namespace the Flutter generator special-cases (colors)
+                          maps to two new class names at once
+  --allow-convention-drift  proceed although the convention changed since planning
+  --config <path>         use a config other than ./rename.config.json
+`;
+
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
+    usage: USAGE,
     flags: [...COMMON_FLAGS, ...['batch','kind','code','after','allow-convention-drift','no-namespace-classes']],
     wantsValue: ['config','batch','kind'],
   });

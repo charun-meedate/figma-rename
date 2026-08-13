@@ -53,7 +53,10 @@ const USAGE = `Usage:
   review.mjs set-to  <figma-id> --to <name>
   review.mjs resolve <figma-id> --to <name>
   review.mjs skip    <figma-id> [--note "<why>"]
-  review.mjs mark    <batch-id> --figma-applied | --applied`;
+  review.mjs mark    <batch-id> --figma-applied | --applied
+
+  --config <path>   use a config other than ./rename.config.json
+  --note "<why>"    attach a reason to a decision; it survives a re-plan`;
 
 function fail(message) {
   throw new Error(`${message}\n\n${USAGE}`);
@@ -315,6 +318,7 @@ function cmdMark(map, args) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
+    usage: USAGE,
     flags: [...COMMON_FLAGS, ...['batch','all','ids','rule','match','min-confidence','note','to','json','pending','figma-applied','applied']],
     wantsValue: ['config','batch','ids','rule','match','min-confidence','note','to'],
   });

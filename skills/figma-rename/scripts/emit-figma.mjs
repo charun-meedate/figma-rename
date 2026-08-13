@@ -37,8 +37,21 @@ const GETTERS = {
 
 const NODE_KINDS = new Set(['component', 'componentSet', 'layer']);
 
+const USAGE = `
+emit-figma.mjs — print the script to paste into use_figma
+
+  --batch <id>            required; the batch to emit
+  --reverse               emit the rollback for an applied batch
+  --with-code-syntax      also set Figma Dev Mode code syntax (variables only)
+  --force                 emit although another batch is already in flight
+  --config <path>         use a config other than ./rename.config.json
+
+Load the figma-use skill before calling use_figma.
+`;
+
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
+    usage: USAGE,
     flags: [...COMMON_FLAGS, ...['batch','reverse','with-code-syntax','force']],
     wantsValue: ['config','batch'],
   });
