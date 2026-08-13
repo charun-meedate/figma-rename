@@ -748,7 +748,8 @@ function projectExtending(extendsValue, overrides = {}) {
   fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
   fs.writeFileSync(
     path.join(dir, 'rename.config.json'),
-    JSON.stringify({ extends: extendsValue, ...overrides }, null, 2),
+    // A figma-source project needs a fileKey; these fixtures are figma-source.
+    JSON.stringify({ extends: extendsValue, figma: { fileKey: 'K' }, ...overrides }, null, 2),
   );
   fs.writeFileSync(
     path.join(dir, 'rename/inventory.json'),
@@ -2052,6 +2053,67 @@ test('plan says when every naming decision was inherited, not chosen', () => {
   assert.equal(quiet.ok, true, quiet.out);
   assert.doesNotMatch(quiet.out, /overrode none of them/);
   fs.rmSync(chosen, { recursive: true, force: true });
+});
+
+test('a project with no Figma behind it can still rename to the standard', () => {
+  // Some projects hand-write their tokens — insureplus-frontend has 531 CSS
+  // custom properties and nothing upstream. The naming standard still applies;
+  // only the transport differs. One gate stood in the way: apply-code waited
+  // for a Figma leg that does not exist.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-codesrc-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'app'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({
+      source: 'code',
+      kinds: ['variable'],
+      convention: { segmentCase: 'kebab', rules: [{ match: 'foreground/**', to: 'surface/$1' }] },
+      code: {
+        roots: ['.'], include: ['app/**'], exclude: [], generated: [],
+        spellings: ['cssVar', 'tailwind'], cssPrefix: '',
+      },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, 'rename/inventory.json'),
+    JSON.stringify({
+      entries: [{ kind: 'variable', id: 'css:foreground/base/action', name: 'foreground/base/action', scope: 'insure.css' }],
+    }),
+  );
+  fs.writeFileSync(path.join(dir, 'app/insure.css'), ':root{--foreground-base-action:#123}\n');
+  fs.writeFileSync(path.join(dir, 'app/x.tsx'), '<div className="bg-foreground-base-action" />\n');
+
+  run('plan.mjs', [], dir);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'rename/rename-map.json'), 'utf8'));
+  const batch = map.batches[0].id;
+  run('review.mjs', ['accept', '--batch', batch, '--all'], dir);
+
+  const applied = run('apply-code.mjs', ['--batch', batch, '--write'], dir);
+  assert.equal(applied.ok, true, applied.out);
+  assert.match(fs.readFileSync(path.join(dir, 'app/insure.css'), 'utf8'), /--surface-base-action/);
+  assert.match(fs.readFileSync(path.join(dir, 'app/x.tsx'), 'utf8'), /bg-surface-base-action/);
+
+  // and the Figma half says why it has nothing to do, rather than half-working
+  const emitted = run('emit-figma.mjs', ['--batch', batch], dir);
+  assert.equal(emitted.ok, false);
+  assert.match(emitted.out, /no Figma file to emit to/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a figma-source project without a fileKey is refused, not half-run', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'figma-rename-nokey-'));
+  fs.mkdirSync(path.join(dir, 'rename'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'rename.config.json'),
+    JSON.stringify({ kinds: ['variable'], convention: { segmentCase: 'kebab' }, code: { roots: ['.'], include: ['**/*.css'], exclude: [], generated: [] } }),
+  );
+  fs.writeFileSync(path.join(dir, 'rename/inventory.json'), JSON.stringify({ entries: [] }));
+  const result = run('plan.mjs', [], dir);
+  assert.equal(result.ok, false);
+  assert.match(result.out, /figma\.fileKey is required/);
+  assert.match(result.out, /"source": "code"/, 'and it names the alternative');
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('a Tailwind utility class is a place a token name lives', () => {

@@ -56,6 +56,13 @@ async function main() {
     wantsValue: ['config','batch'],
   });
   const config = await loadConfig(args.config);
+  if (config.source === 'code') {
+    throw new Error(
+      'This project sets `"source": "code"`, so there is no Figma file to emit to. ' +
+        'A code-source rename goes plan → review → check → apply-code --write → check --after.',
+    );
+  }
+
   const map = await loadMap(config.renameMapPath);
 
   const batchId = args.batch ?? args._[0];

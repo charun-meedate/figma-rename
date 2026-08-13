@@ -438,6 +438,49 @@ The page fan-out returns one result per call. Concatenate the `entries` arrays
 into one file by hand (or have the agent do it) — order does not matter, ids
 must be unique, and `loadInventory` fails loudly on a duplicate id.
 
+
+## When there is no Figma behind the tokens
+
+A project with `"source": "code"` still needs an inventory — it is what `plan`
+reads and what records the old names — but it comes out of the codebase instead.
+CSS custom properties are the usual case, and the shape is the same as any other
+inventory except that the `id` is synthesised from the name, since there is no
+Figma id to bind to.
+
+```bash
+node -e '
+const fs = require("node:fs");
+const files = process.argv.slice(1);
+const seen = new Map();
+for (const file of files) {
+  const css = fs.readFileSync(file, "utf8");
+  // Definitions only. A definition follows "{" or ";" or the start of the file;
+  // a var() use follows "(" — which is what keeps uses out. Anchoring to the
+  // start of a LINE instead returns nothing at all for a file that puts several
+  // declarations on one line, and says nothing about why.
+  for (const m of css.matchAll(/(?:^|[{;])\s*--([a-z0-9-]+)\s*:/g)) {
+    const kebab = m[1];
+    // The convention works in segments, so "-" becomes "/" here. If the project
+    // spells hierarchy some other way, change this one line and nothing else.
+    const name = kebab.replace(/-/g, "/");
+    if (!seen.has(name)) seen.set(name, { kind: "variable", id: "css:" + name, name, scope: file.split("/").pop() });
+  }
+}
+fs.mkdirSync("rename", { recursive: true });
+fs.writeFileSync("rename/inventory.json", JSON.stringify({ entries: [...seen.values()] }, null, 1));
+console.log("captured " + seen.size + " token(s)");
+' app/style/insure.css app/app.css
+```
+
+Two things to know before running it:
+
+- **`-` to `/` is a guess about the project, not a fact.** A file that writes
+  `--border-danger-default` may mean `border/danger/default` or
+  `border-danger/default`. Read a dozen names first and adjust the line; getting
+  it wrong produces a plan that looks reasonable and regroups everything wrongly.
+- **Only definitions are captured**, never `var()` uses, so a token referenced
+  but never defined stays invisible. `check --code` reports it as a spelling
+  that matched nothing, which is the signal to look.
 ## When the page listing looks empty
 
 `get_metadata` has been observed reporting only the cover page on a production

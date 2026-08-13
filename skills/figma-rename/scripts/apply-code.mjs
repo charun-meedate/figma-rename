@@ -65,7 +65,12 @@ async function main() {
     const batch = batchById(map, args.batch);
     const status = statusOf(batch);
     if (args.write) {
-      if (status !== 'figma-applied') {
+      // A code-source project never passes through figma-applied: there is no
+      // Figma to apply to. The gate exists to stop code moving ahead of Figma,
+      // and with no Figma there is nothing to be ahead of.
+      if (config.source === 'code' && status === 'planned') {
+        // fall through — planned is the only state a code-source batch has
+      } else if (status !== 'figma-applied') {
         throw new Error(
           status === 'planned'
             ? `"${batch.id}" has not been renamed in Figma yet. Order matters:\n` +
@@ -82,7 +87,10 @@ async function main() {
     }
   }
 
-  const statuses = args.batch ? undefined : ['figma-applied'];
+  // Same reasoning for a bare run: with no Figma leg, `planned` is the state a
+  // reviewed batch sits in and is what is due.
+  const dueStatus = config.source === 'code' ? 'planned' : 'figma-applied';
+  const statuses = args.batch ? undefined : [dueStatus];
   const renames = selectRenames(map, {
     batch: args.batch,
     kind: args.kind,
@@ -90,12 +98,15 @@ async function main() {
     decisions: ['accepted'],
   });
   if (renames.length === 0) {
-    const inFlight = map.batches.filter((b) => statusOf(b) === 'figma-applied');
+    const inFlight = map.batches.filter((b) => statusOf(b) === dueStatus);
     throw new Error(
       inFlight.length
         ? 'Nothing accepted to apply in the batches Figma is ahead on.'
-        : 'No batch is waiting for its code rewrite. Apply one in Figma first ' +
-          '(emit-figma → use_figma → review.mjs mark <id> --figma-applied).',
+        : config.source === 'code'
+          ? 'No batch is waiting for its code rewrite. Plan and review one first ' +
+            '(plan.mjs → review.mjs accept).'
+          : 'No batch is waiting for its code rewrite. Apply one in Figma first ' +
+            '(emit-figma → use_figma → review.mjs mark <id> --figma-applied).',
     );
   }
 

@@ -1,4 +1,6 @@
 {
+  "$comment_source": "\"figma\" (default) when Figma is upstream — figma.fileKey is then required. \"code\" when the tokens are hand-written with no Figma behind them: same standard, same review, no Figma leg.",
+  "source": "figma",
   "$comment": "Copy to your project root as rename.config.json. The naming standard should NOT live here — point at it with `extends` so every project shares one. Everything below `extends` is an override for this project only.",
 
   "$comment_extends": "A preset shipped with the skill (aurora, starter), or a path to your team's own file: \"../design-system/naming.json\". Run `node $S/plan.mjs --print-config` to see the merged result.",

@@ -32,6 +32,21 @@ without ids, one resolved value instead of every mode, and only the tokens that
 happen to be used. Everything downstream needs exactly what they drop. Step 1 of
 the manual has the comparison.
 
+## Two shapes of project
+
+`source` says where the names come from, and it changes only whether there is a
+Figma leg — the naming standard, the review gate and the codemod are the same
+either way, which is the point: one standard across both.
+
+| `"source"` | when | the loop |
+|---|---|---|
+| `"figma"` (default) | Figma is upstream; `figma.fileKey` required | plan → review → check → **emit-figma → use_figma → mark** → apply-code → check --after |
+| `"code"` | tokens are hand-written, nothing upstream | plan → review → check → apply-code → check --after |
+
+A code-source project still extends the same preset and still answers the same
+questions. `emit-figma` says plainly that it has nothing to emit to, rather than
+producing a script against a file that does not exist.
+
 ## Before any of that: ask
 
 **The loop below starts after the naming decisions have been made, and they are

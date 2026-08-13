@@ -15,9 +15,18 @@ const PRESETS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 
 const VALID_KINDS = new Set(['variable', 'component', 'componentSet', 'layer', 'textStyle', 'effectStyle', 'paintStyle']);
 
+// Where the names come from. "figma" is the normal case: Figma is upstream and
+// a batch lands there before it lands in code. "code" is for a project whose
+// tokens are hand-written with no Figma behind them — the naming standard still
+// applies, there is simply no Figma leg to gate on. Explicit rather than
+// inferred from a missing fileKey: the lifecycle differs, so a typo must not
+// choose it.
+const VALID_SOURCES = new Set(['figma', 'code']);
+
 const VALID_SPELLINGS = new Set(['figmaPath', 'cssVar', 'kebab', 'camel', 'camelMember', 'pascal', 'snake', 'dot', 'tailwind']);
 
 const DEFAULTS = {
+  source: 'figma',
   inventoryPath: 'rename/inventory.json',
   renameMapPath: 'rename/rename-map.json',
 };
@@ -263,7 +272,7 @@ export async function loadConfig(explicitPath) {
   // Unknown keys. A typo'd `conventions`, or `sizeNaming` placed at the top
   // level instead of inside `convention`, used to be silently ignored: the user
   // saw a plan that behaved as if they had never written the setting.
-  const KNOWN_TOP = ['extends', 'figma', 'inventoryPath', 'renameMapPath', 'kinds', 'convention', 'code'];
+  const KNOWN_TOP = ['extends', 'source', 'figma', 'inventoryPath', 'renameMapPath', 'kinds', 'convention', 'code'];
   const KNOWN_CONVENTION = [
     'separator', 'segmentCase', 'aliases', 'rules', 'conforming', 'ignore', 'structure',
     'transform', 'sizeNaming', 'colorGroup', 'components',
@@ -315,6 +324,16 @@ export async function loadConfig(explicitPath) {
   for (const key of ['roots', 'include', 'exclude', 'generated', 'spellings']) {
     if (!Array.isArray(config.code[key])) errors.push(`code.${key} must be an array of strings.`);
   }
+  if (!VALID_SOURCES.has(config.source)) {
+    errors.push(`source "${config.source}" is not one of: ${[...VALID_SOURCES].join(', ')}.`);
+  }
+  if (config.source === 'figma' && !config.figma?.fileKey) {
+    errors.push(
+      'figma.fileKey is required when source is "figma". A project whose tokens are ' +
+        'hand-written with no Figma behind them sets `"source": "code"` instead.',
+    );
+  }
+
   for (const spelling of config.code.spellings ?? []) {
     if (!VALID_SPELLINGS.has(spelling)) {
       errors.push(`code.spellings contains "${spelling}", which is not one of: ${[...VALID_SPELLINGS].join(', ')}.`);
