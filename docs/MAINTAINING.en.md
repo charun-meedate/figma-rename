@@ -58,6 +58,8 @@ cp "$S/rename.config.example.json" rename.config.json    # once per project
 
 # 1. inventory — cannot be run here; it goes through use_figma (references/inventory.md)
 
+node "$S/capture-css.mjs" src/styles.css   # source: code — inventory from CSS
+
 # 2. propose names
 node "$S/plan.mjs"                          # every kind in config.kinds
 node "$S/plan.mjs" --kind variable          # variables only
@@ -213,7 +215,7 @@ louder.**
 Two things have to pass, and they check different things:
 
 ```bash
-node skills/figma-rename/scripts/selftest.mjs     # 172 cases — the scripts are right
+node skills/figma-rename/scripts/selftest.mjs     # 174 cases — the scripts are right
 ```
 
 and the **evals** in `skills/figma-rename/evals/`, which check that the *agent

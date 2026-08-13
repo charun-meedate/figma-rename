@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { definedProperties, toTokenName } from './capture-css.mjs';
 import { buildReplacer, namespaceClassPairs, rewrite, spellingsFor } from './lib/codemod.mjs';
 import { classifyComponent, findNameCollisions, suggestComponentName } from './lib/classify.mjs';
 import { caseSegment, compileConvention, compileConventions, normalizeName, proposeName } from './lib/convention.mjs';
@@ -2143,6 +2144,38 @@ test('a figma-source project without a fileKey is refused, not half-run', () => 
   assert.match(result.out, /figma\.fileKey is required/);
   assert.match(result.out, /"source": "code"/, 'and it names the alternative');
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('capture-css finds definitions written under a comment', () => {
+  // The rule this replaced required a definition to follow "{" or ";". In a
+  // stylesheet organised into commented sections most definitions follow a
+  // comment instead, so it captured 149 of 176 tokens on a real file — a 15%
+  // silent miss, which the plan then reports as a clean run over what it saw.
+  const css = [
+    ':root {',
+    '  /* §1.1 Primary — the brand red */',
+    '  --primary-default: #e32321;',
+    '  --primary-dark: #b71c1a;',
+    '}',
+    '@theme inline {',
+    '  /* mapped into Tailwind */',
+    '  --color-primary-default: var(--primary-default);',
+    '}',
+  ].join('\n');
+  const found = definedProperties(css);
+  assert.deepEqual(found, ['primary-default', 'primary-dark', 'color-primary-default']);
+  // a var() reference is a use, never a definition
+  assert.equal(definedProperties('a { color: var(--primary-default); }').length, 0);
+});
+
+test('capture-css records the name shape the project actually uses', () => {
+  assert.equal(toTokenName('primary-soft-light'), 'primary/soft/light');
+  assert.equal(toTokenName('primary-soft-light', { flat: true }), 'primary-soft-light');
+  // shadcn: @theme holds the names, and the layer prefix is not part of one
+  assert.equal(toTokenName('color-primary-dark', { layer: 'color-', flat: true }), 'primary-dark');
+  assert.equal(toTokenName('color-primary-dark', { layer: 'color-' }), 'primary/dark');
+  // a name outside the layer is left whole rather than silently mangled
+  assert.equal(toTokenName('radius-lg', { layer: 'color-', flat: true }), 'radius-lg');
 });
 
 test('the shadcn two-layer shape renames the layer that names things', () => {

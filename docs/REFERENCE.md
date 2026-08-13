@@ -184,7 +184,7 @@ Variable 3   -> opacity/50       [low]    0.5 อยู่ในช่วง 0�
 
 ## สถานะการทดสอบ
 
-`node skills/figma-rename/scripts/selftest.mjs` — 172 เคส ผ่านหมด ครอบคลุม
+`node skills/figma-rename/scripts/selftest.mjs` — 174 เคส ผ่านหมด ครอบคลุม
 convention/rule template, boundary guard (`--text-primary` ต้องไม่ไปโดน
 `--text-primary-default`, `.primaryDefault` ต้องโดนเฉพาะหลังจุด), chain กับ swap
 ที่ต้องแทนที่พร้อมกัน, การ refuse ทั้ง 4 แบบของ check (map เก่า / ชื่อซ้ำ / identifier ชน /
@@ -221,11 +221,12 @@ skills/figma-rename/
 ├── evals/                       ชุดทดสอบพฤติกรรม 4 อัน
 └── scripts/
     ├── plan.mjs                 inventory + convention + suggest → rename-map.json (ข้อเสนอ)
+    ├── capture-css.mjs           inventory from CSS (source: code)
     ├── review.mjs               ตัดสิน accept/reject/resolve + เลื่อนสถานะ batch
     ├── check.mjs                ปฏิเสธ map ที่จะพัง (+ --code, --after)
     ├── emit-figma.mjs           batch → สคริปต์สำหรับ use_figma (+ --reverse)
     ├── apply-code.mjs           codemod ทั้ง repo (dry-run เป็น default)
-    ├── selftest.mjs             172 เคส
+    ├── selftest.mjs             174 เคส
     ├── rename.config.example.json
     └── lib/
         ├── suggest.mjs          value → ชื่อ (สี/ตัวเลข) + calibration

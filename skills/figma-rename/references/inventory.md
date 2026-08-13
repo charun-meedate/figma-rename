@@ -442,45 +442,37 @@ must be unique, and `loadInventory` fails loudly on a duplicate id.
 ## When there is no Figma behind the tokens
 
 A project with `"source": "code"` still needs an inventory — it is what `plan`
-reads and what records the old names — but it comes out of the codebase instead.
-CSS custom properties are the usual case, and the shape is the same as any other
-inventory except that the `id` is synthesised from the name, since there is no
-Figma id to bind to.
+reads and what records the old names — but it comes out of the codebase. That
+one is a script in this skill, because it can be:
 
 ```bash
-node -e '
-const fs = require("node:fs");
-const files = process.argv.slice(1);
-const seen = new Map();
-for (const file of files) {
-  const css = fs.readFileSync(file, "utf8");
-  // Definitions only. A definition follows "{" or ";" or the start of the file;
-  // a var() use follows "(" — which is what keeps uses out. Anchoring to the
-  // start of a LINE instead returns nothing at all for a file that puts several
-  // declarations on one line, and says nothing about why.
-  for (const m of css.matchAll(/(?:^|[{;])\s*--([a-z0-9-]+)\s*:/g)) {
-    const kebab = m[1];
-    // The convention works in segments, so "-" becomes "/" here. If the project
-    // spells hierarchy some other way, change this one line and nothing else.
-    const name = kebab.replace(/-/g, "/");
-    if (!seen.has(name)) seen.set(name, { kind: "variable", id: "css:" + name, name, scope: file.split("/").pop() });
-  }
-}
-fs.mkdirSync("rename", { recursive: true });
-fs.writeFileSync("rename/inventory.json", JSON.stringify({ entries: [...seen.values()] }, null, 1));
-console.log("captured " + seen.size + " token(s)");
-' app/style/insure.css app/app.css
+node "$S/capture-css.mjs" src/styles.css --dry-run     # look first
+node "$S/capture-css.mjs" src/styles.css               # → rename/inventory.json
 ```
 
-Two things to know before running it:
+It prints the first few names it derived, because **the segment shape is a guess
+about the project, not a fact**. A file that writes `--border-danger-default`
+may mean `border/danger/default` or `border-danger/default`; `--separator` and
+`--flat` decide, and the wrong choice produces a plan that looks reasonable and
+regroups everything wrongly.
 
-- **`-` to `/` is a guess about the project, not a fact.** A file that writes
-  `--border-danger-default` may mean `border/danger/default` or
-  `border-danger/default`. Read a dozen names first and adjust the line; getting
-  it wrong produces a plan that looks reasonable and regroups everything wrongly.
+For a shadcn-style file, where `:root` holds values and `@theme` holds the names
+Tailwind reads, capture the naming layer only:
+
+```bash
+node "$S/capture-css.mjs" src/styles.css --layer color- --flat
+```
+
+Two things it will not do for you:
+
 - **Only definitions are captured**, never `var()` uses, so a token referenced
   but never defined stays invisible. `check --code` reports it as a spelling
   that matched nothing, which is the signal to look.
+- **`id` is synthesised** from the CSS name (`css:--primary-dark`). There is no
+  Figma id to bind to, so the map is anchored to the name it found — which is
+  why re-capturing after an outside edit matters as much here as it does with
+  Figma.
+
 ## When the page listing looks empty
 
 `get_metadata` has been observed reporting only the cover page on a production
